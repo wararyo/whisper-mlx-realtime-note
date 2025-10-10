@@ -1,0 +1,19 @@
+[project]
+name = "whisper-realtime-note"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "flask>=3.1.2",
+    "huggingface-hub>=0.35.3",
+    "mlx>=0.11",
+    "mlx-whisper>=0.4.3",
+    "more-itertools>=10.8.0",
+    "numba>=0.60.0",
+    "numpy>=2.0.2",
+    "scipy>=1.13.1",
+    "tiktoken>=0.12.0",
+    "torch>=2.8.0",
+    "tqdm>=4.67.1",
+]

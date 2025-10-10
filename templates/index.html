@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>議事録作成支援アプリ</title>
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.13.1/dist/ort.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad/dist/index.browser.js"></script>
+  <link rel="stylesheet" href="index.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>議事録作成支援アプリ</h1>
+      <div class="status">
+        <div class="status-indicator" id="micStatus"></div>
+        <span>音声認識中</span>
+      </div>
+    </div>
+    
+    <div class="controls">
+      <button id="clearBtn" class="btn-danger">クリア</button>
+      <button id="saveBtn" class="btn-primary">手動保存</button>
+      <button id="downloadBtn" class="btn-secondary">ダウンロード</button>
+    </div>
+    
+    <textarea id="transcript" placeholder="ここに議事録が自動的に追記されます。手動での編集も可能です。"></textarea>
+    
+    <div class="save-status" id="saveStatus">
+      自動保存: 準備中...
+    </div>
+  </div>
+
+  <script type="module">
+    // LocalStorage管理
+    const STORAGE_KEY = 'meeting-transcript';
+    const AUTO_SAVE_INTERVAL = 10000; // 10秒ごとに自動保存
+    
+    const transcriptTextarea = document.getElementById('transcript');
+    const saveStatus = document.getElementById('saveStatus');
+    const clearBtn = document.getElementById('clearBtn');
+    const saveBtn = document.getElementById('saveBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const micStatus = document.getElementById('micStatus');
+    
+    // ページロード時に保存されたテキストを復元
+    function loadSavedTranscript() {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        transcriptTextarea.value = saved;
+        updateSaveStatus('前回の議事録を復元しました');
+      }
+    }
+    
+    // テキストを保存
+    function saveTranscript() {
+      localStorage.setItem(STORAGE_KEY, transcriptTextarea.value);
+      const now = new Date().toLocaleTimeString();
+      updateSaveStatus(`自動保存済み (${now})`);
+    }
+    
+    // ステータス更新
+    function updateSaveStatus(message) {
+      saveStatus.textContent = `自動保存: ${message}`;
+    }
+    
+    // テキストエリアにテキストを追加（キャレット位置を保持）
+    function appendToTranscript(text) {
+      // 現在のキャレット位置を保存
+      const currentStart = transcriptTextarea.selectionStart;
+      const currentEnd = transcriptTextarea.selectionEnd;
+      const wasActive = document.activeElement === transcriptTextarea;
+      
+      // 現在のスクロール位置を保存
+      const scrollTop = transcriptTextarea.scrollTop;
+      
+      // テキストを末尾に追加
+      const currentValue = transcriptTextarea.value;
+      let newText = text + '\n';
+      
+      if (currentValue && !currentValue.endsWith('\n')) {
+        newText = '\n' + newText;
+      }
+      
+      transcriptTextarea.value = currentValue + newText;
+      
+      // キャレット位置とフォーカスを復元（テキストエリアがアクティブだった場合のみ）
+      if (wasActive) {
+        transcriptTextarea.focus();
+        transcriptTextarea.setSelectionRange(currentStart, currentEnd);
+        // スクロール位置を復元（ただし、スクロールが最下部に近い場合は自動スクロール）
+        if (scrollTop + transcriptTextarea.clientHeight >= transcriptTextarea.scrollHeight - 50) {
+          // 最下部付近だった場合は新しいテキストが見えるように自動スクロール
+          transcriptTextarea.scrollTop = transcriptTextarea.scrollHeight;
+        } else {
+          // そうでなければ元の位置を保持
+          transcriptTextarea.scrollTop = scrollTop;
+        }
+      } else {
+        // フォーカスがない場合は最下部にスクロール
+        transcriptTextarea.scrollTop = transcriptTextarea.scrollHeight;
+      }
+      
+      saveTranscript(); // 即座に保存
+    }
+    
+    // ファイルダウンロード
+    function downloadTranscript() {
+      const content = transcriptTextarea.value;
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `議事録_${new Date().toISOString().split('T')[0]}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+    
+    // イベントリスナー
+    clearBtn.addEventListener('click', () => {
+      if (confirm('議事録をクリアしますか？この操作は元に戻せません。')) {
+        transcriptTextarea.value = '';
+        localStorage.removeItem(STORAGE_KEY);
+        updateSaveStatus('議事録をクリアしました');
+      }
+    });
+    
+    saveBtn.addEventListener('click', () => {
+      saveTranscript();
+    });
+    
+    downloadBtn.addEventListener('click', downloadTranscript);
+    
+    // テキストエリアの変更を監視して自動保存
+    let saveTimeout;
+    transcriptTextarea.addEventListener('input', () => {
+      clearTimeout(saveTimeout);
+      saveTimeout = setTimeout(saveTranscript, 2000); // 2秒後に保存
+    });
+    
+    // 定期的な自動保存
+    setInterval(saveTranscript, AUTO_SAVE_INTERVAL);
+    
+    // ページ離脱前に保存
+    window.addEventListener('beforeunload', () => {
+      saveTranscript();
+    });
+    
+    // 初期化
+    loadSavedTranscript();
+    updateSaveStatus('準備完了');
+    
+    // 音声認識の設定
+    try {
+      const myvad = await vad.MicVAD.new({
+        positiveSpeechThreshold: 0.4,
+        negativeSpeechThreshold: 0.4,
+        minSpeechFrames: 5,
+        preSpeechPadFrames: 2,
+        redemptionFrames: 1,
+        onSpeechEnd: async (arr) => {
+          console.log("Speech ended");
+          micStatus.style.backgroundColor = '#ffc107'; // 処理中は黄色
+          
+          const wavBuffer = vad.utils.encodeWAV(arr);
+          var file = new File([wavBuffer], `file${Date.now()}.wav`);
+          let formData = new FormData();
+          formData.append("file", file);
+          
+          try {
+            const resp = await fetch("/api/transcribe", {
+              method: "POST",
+              body: formData,
+            });
+            const resp2 = await resp.json();
+            console.log(resp2.text);
+            
+            if (resp2.text && resp2.text.trim()) {
+              const timestamp = new Date().toLocaleTimeString();
+              const textWithTime = `[${timestamp}] ${resp2.text.trim()}`;
+              appendToTranscript(textWithTime);
+            }
+            
+            micStatus.style.backgroundColor = '#28a745'; // 成功時は緑色
+          } catch (err) {
+            console.error(err);
+            micStatus.style.backgroundColor = '#dc3545'; // エラー時は赤色
+            setTimeout(() => {
+              micStatus.style.backgroundColor = '#28a745';
+            }, 2000);
+          }
+        },
+      });
+      
+      myvad.start();
+      console.log("音声認識を開始しました");
+      updateSaveStatus('音声認識開始 - 準備完了');
+    } catch (e) {
+      console.error("音声認識の初期化に失敗:", e);
+      micStatus.style.backgroundColor = '#dc3545';
+      updateSaveStatus('音声認識の初期化に失敗しました');
+    }
+  </script>
+</body>
+</html>
