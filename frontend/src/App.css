@@ -110,6 +110,7 @@ h1 {
   transform: translateY(-1px);
 }
 
+/* Legacy textarea styles - now handled by CodeMirror.css */
 .transcript-area {
   width: 100%;
   min-height: 400px;
@@ -128,6 +129,20 @@ h1 {
 .transcript-area:focus {
   border-color: #007bff;
   box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+/* CodeMirror container overrides */
+.editor-container {
+  margin: 0;
+}
+
+.editor-container .CodeMirror {
+  font-size: 16px;
+  line-height: 1.6;
+  font-family: 'Helvetica Neue', Arial, sans-serif;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  min-height: 400px;
 }
 
 .save-status {

@@ -1,0 +1,57 @@
+/* CodeMirror styles */
+@import url('codemirror/lib/codemirror.css');
+
+.CodeMirror {
+  height: 400px;
+  width: 100%;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.CodeMirror-focused {
+  border-color: #007acc;
+  box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.1);
+}
+
+/* Shared cursor styles */
+.remote-caret {
+  position: absolute;
+  border-left: #007acc;
+  border-left-style: solid;
+  border-left-width: 2px;
+  height: 1em;
+  z-index: 10;
+}
+
+.remote-caret > div {
+  position: relative;
+  top: -1.05em;
+  font-size: 13px;
+  background-color: #007acc;
+  font-family: sans-serif;
+  font-style: normal;
+  font-weight: normal;
+  line-height: normal;
+  user-select: none;
+  color: white;
+  padding-left: 4px;
+  padding-right: 4px;
+  border-radius: 2px;
+  z-index: 11;
+}
+
+/* Editor container styles */
+.editor-container {
+  position: relative;
+  width: 100%;
+  margin: 20px 0;
+}
+
+.editor-container .CodeMirror {
+  resize: vertical;
+  min-height: 200px;
+  max-height: 600px;
+}

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useMicVAD } from '@ricky0123/vad-react'
 import axios from 'axios'
+import { CodeMirrorEditor, CodeMirrorEditorHandle } from './CodeMirrorEditor'
 import './App.css'
 
 const API_BASE_URL = 'http://localhost:9000'
@@ -18,6 +19,7 @@ function App() {
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
+  const editorRef = useRef<CodeMirrorEditorHandle>(null)
 
   // VAD（Voice Activity Detection）の設定
   const vad = useMicVAD({
@@ -45,6 +47,12 @@ function App() {
     const saved = localStorage.getItem(STORAGE_KEY)
     if (saved) {
       setTranscript(saved)
+      // エディタが準備できてから復元
+      setTimeout(() => {
+        if (editorRef.current) {
+          editorRef.current.setText(saved)
+        }
+      }, 100)
       setSaveStatus('復元完了')
     } else {
       setSaveStatus('新規作成')
@@ -54,8 +62,9 @@ function App() {
   // 自動保存の設定
   useEffect(() => {
     const interval = setInterval(() => {
-      if (transcript) {
-        localStorage.setItem(STORAGE_KEY, transcript)
+      const currentText = editorRef.current?.getText() || transcript
+      if (currentText) {
+        localStorage.setItem(STORAGE_KEY, currentText)
         setSaveStatus(`自動保存: ${new Date().toLocaleTimeString()}`)
       }
     }, AUTO_SAVE_INTERVAL)
@@ -113,11 +122,11 @@ function App() {
 
       if (response.data && response.data.text) {
         const newText = response.data.text.trim()
-        if (newText) {
-          setTranscript(prev => {
-            const separator = prev ? '\n' : ''
-            return prev + separator + newText
-          })
+        if (newText && editorRef.current) {
+          // CodeMirrorエディタに直接追加
+          editorRef.current.appendText(newText)
+          // stateも更新（保存用）
+          setTranscript(editorRef.current.getText())
         }
       }
     } catch (error) {
@@ -128,6 +137,9 @@ function App() {
 
   const handleClear = (): void => {
     if (window.confirm('すべてのテキストを削除しますか？')) {
+      if (editorRef.current) {
+        editorRef.current.clearText()
+      }
       setTranscript('')
       localStorage.removeItem(STORAGE_KEY)
       setSaveStatus('クリア完了')
@@ -135,17 +147,19 @@ function App() {
   }
 
   const handleManualSave = (): void => {
-    localStorage.setItem(STORAGE_KEY, transcript)
+    const currentText = editorRef.current?.getText() || transcript
+    localStorage.setItem(STORAGE_KEY, currentText)
     setSaveStatus(`手動保存: ${new Date().toLocaleTimeString()}`)
   }
 
   const handleDownload = (): void => {
-    if (!transcript) {
+    const currentText = editorRef.current?.getText() || transcript
+    if (!currentText) {
       alert('ダウンロードするテキストがありません')
       return
     }
 
-    const blob = new Blob([transcript], { type: 'text/plain;charset=utf-8' })
+    const blob = new Blob([currentText], { type: 'text/plain;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
@@ -181,11 +195,11 @@ function App() {
         </button>
       </div>
       
-      <textarea
-        value={transcript}
-        onChange={(e) => setTranscript(e.target.value)}
+      <CodeMirrorEditor
+        ref={editorRef}
+        initialValue={transcript}
+        onChange={setTranscript}
         placeholder="ここに議事録が自動的に追記されます。手動での編集も可能です。"
-        className="transcript-area"
       />
       
       <div className="save-status">
