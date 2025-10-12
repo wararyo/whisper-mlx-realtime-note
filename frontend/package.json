@@ -12,7 +12,6 @@
     "copy-wasm": "cp node_modules/onnxruntime-web/dist/*.wasm public/ 2>/dev/null || echo 'WASM files copied or already exist'; cp node_modules/@ricky0123/vad-web/dist/silero_vad_legacy.onnx public/ 2>/dev/null || echo 'ONNX file copied or already exists'"
   },
   "dependencies": {
-    "@ricky0123/vad-react": "^0.0.34",
     "@types/codemirror": "^5.60.16",
     "axios": "^1.12.2",
     "codemirror": "^5.65.20",

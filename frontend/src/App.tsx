@@ -1,46 +1,147 @@
 import { useState, useEffect, useRef } from 'react'
-import { useMicVAD } from '@ricky0123/vad-react'
-import axios from 'axios'
 import { CodeMirrorEditor, CodeMirrorEditorHandle } from './CodeMirrorEditor'
 import './App.css'
+
+// グローバルのvadオブジェクトの型定義
+declare global {
+  interface Window {
+    vad: {
+      MicVAD: {
+        new: (options: any) => Promise<{
+          start: () => void
+          pause: () => void
+          destroy: () => void
+        }>
+      }
+      utils: {
+        encodeWAV: (audioData: Float32Array) => ArrayBuffer
+      }
+    }
+  }
+}
 
 const API_BASE_URL = 'http://localhost:9000'
 const STORAGE_KEY = 'meeting-transcript'
 const AUTO_SAVE_INTERVAL = 10000 // 10秒ごとに自動保存
 
-interface TranscribeResponse {
-  text: string
-}
-
 function App() {
   const [transcript, setTranscript] = useState<string>('')
-  const [isRecording, setIsRecording] = useState<boolean>(false)
   const [saveStatus, setSaveStatus] = useState<string>('準備中...')
+  const [vadStatus, setVadStatus] = useState<string>('初期化中...')
+  const [micPermission, setMicPermission] = useState<string>('checking')
   
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const chunksRef = useRef<Blob[]>([])
   const editorRef = useRef<CodeMirrorEditorHandle>(null)
+  const vadRef = useRef<any>(null)
 
-  // VAD（Voice Activity Detection）の設定
-  const vad = useMicVAD({
-    onSpeechStart: () => {
-      console.log('Speech start detected')
-      startRecording()
-    },
-    onSpeechEnd: (_audio: Float32Array) => {
-      console.log('Speech end detected')
-      stopRecording()
-    },
-    onVADMisfire: () => {
-      console.log('VAD misfire')
-    },
-    positiveSpeechThreshold: 0.4,
-    negativeSpeechThreshold: 0.38,
-    minSpeechMs: 300,
-    preSpeechPadMs: 800,
-    redemptionMs: 1000,
-    model: 'v5'
-  })
+  // テキストを議事録に追加する関数
+  const appendToTranscript = (text: string) => {
+    if (editorRef.current) {
+      editorRef.current.appendText(text)
+      setTranscript(editorRef.current.getText())
+    }
+  }
+
+  // 保存状況を更新する関数
+  const updateSaveStatus = (status: string) => {
+    setSaveStatus(status)
+  }
+
+  // マイクロフォン権限の確認
+  useEffect(() => {
+    const checkMicPermission = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        console.log('Microphone access granted')
+        setMicPermission('granted')
+        stream.getTracks().forEach(track => track.stop()) // ストリームを停止
+      } catch (error) {
+        console.error('Microphone access denied:', error)
+        setMicPermission('denied')
+      }
+    }
+    
+    checkMicPermission()
+  }, [])
+
+  // CDN版VADの初期化
+  useEffect(() => {
+    const initVAD = async () => {
+      try {
+        // CDNのロードを待機
+        let attempts = 0
+        while (!window.vad && attempts < 50) {
+          await new Promise(resolve => setTimeout(resolve, 100))
+          attempts++
+        }
+
+        if (!window.vad) {
+          throw new Error('VAD CDN failed to load')
+        }
+
+        console.log('Initializing VAD...')
+        setVadStatus('VAD初期化中...')
+
+        const myvad = await window.vad.MicVAD.new({
+          positiveSpeechThreshold: 0.5,
+          negativeSpeechThreshold: 0.45,
+          minSpeechFrames: 3,
+          preSpeechPadFrames: 8,
+          redemptionFrames: 10,
+          model: 'v5',
+          onSpeechStart: () => {
+            console.log("Speech started")
+            setVadStatus('話しています...')
+          },
+          onSpeechEnd: async (arr: Float32Array) => {
+            console.log("Speech ended")
+            setVadStatus('処理中...')
+            
+            try {
+              const wavBuffer = window.vad.utils.encodeWAV(arr)
+              const file = new File([wavBuffer], `file${Date.now()}.wav`)
+              const formData = new FormData()
+              formData.append("file", file)
+              
+              const resp = await fetch(`${API_BASE_URL}/api/transcribe`, {
+                method: "POST",
+                body: formData,
+              })
+              const resp2 = await resp.json()
+              console.log(resp2.text)
+              
+              if (resp2.text && resp2.text.trim()) {
+                const timestamp = new Date().toLocaleTimeString()
+                const textWithTime = `[${timestamp}] ${resp2.text.trim()}`
+                appendToTranscript(textWithTime)
+              }
+              
+              setVadStatus('音声認識中')
+            } catch (err) {
+              console.error(err)
+              setVadStatus('エラー')
+              setTimeout(() => {
+                setVadStatus('音声認識中')
+              }, 2000)
+            }
+          }
+        })
+        
+        vadRef.current = myvad
+        myvad.start()
+        console.log("音声認識を開始しました")
+        setVadStatus('音声認識中')
+        updateSaveStatus('音声認識開始 - 準備完了')
+      } catch (e) {
+        console.error("音声認識の初期化に失敗:", e)
+        setVadStatus('初期化失敗')
+        updateSaveStatus('音声認識の初期化に失敗しました')
+      }
+    }
+
+    if (micPermission === 'granted') {
+      initVAD()
+    }
+  }, [micPermission])
 
   // ページロード時に保存されたテキストを復元
   useEffect(() => {
@@ -71,69 +172,6 @@ function App() {
 
     return () => clearInterval(interval)
   }, [transcript])
-
-  const startRecording = async (): Promise<void> => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      
-      mediaRecorderRef.current = new MediaRecorder(stream)
-      chunksRef.current = []
-
-      mediaRecorderRef.current.ondataavailable = (event: BlobEvent) => {
-        if (event.data.size > 0) {
-          chunksRef.current.push(event.data)
-        }
-      }
-
-      mediaRecorderRef.current.onstop = async () => {
-        const audioBlob = new Blob(chunksRef.current, { type: 'audio/wav' })
-        await transcribeAudio(audioBlob)
-        stream.getTracks().forEach(track => track.stop())
-      }
-
-      mediaRecorderRef.current.start()
-      setIsRecording(true)
-    } catch (error) {
-      console.error('録音開始エラー:', error)
-    }
-  }
-
-  const stopRecording = (): void => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop()
-      setIsRecording(false)
-    }
-  }
-
-  const transcribeAudio = async (audioBlob: Blob): Promise<void> => {
-    const formData = new FormData()
-    formData.append('file', audioBlob, 'recording.wav')
-
-    try {
-      const response = await axios.post<TranscribeResponse>(
-        `${API_BASE_URL}/api/transcribe`, 
-        formData, 
-        {
-          headers: {
-            'Content-Type': 'multipart/form-data'
-          }
-        }
-      )
-
-      if (response.data && response.data.text) {
-        const newText = response.data.text.trim()
-        if (newText && editorRef.current) {
-          // CodeMirrorエディタに直接追加
-          editorRef.current.appendText(newText)
-          // stateも更新（保存用）
-          setTranscript(editorRef.current.getText())
-        }
-      }
-    } catch (error) {
-      console.error('音声認識エラー:', error)
-      setSaveStatus('音声認識に失敗しました')
-    }
-  }
 
   const handleClear = (): void => {
     if (window.confirm('すべてのテキストを削除しますか？')) {
@@ -170,8 +208,28 @@ function App() {
     URL.revokeObjectURL(url)
   }
 
-  // VADの状態を取得
-  const micStatus = vad.userSpeaking ? 'active' : 'inactive'
+  const handleRestartVAD = (): void => {
+    if (vadRef.current) {
+      try {
+        console.log('Restarting VAD...')
+        vadRef.current.pause()
+        setTimeout(() => {
+          vadRef.current?.start()
+          console.log('VAD restarted')
+        }, 500)
+      } catch (error) {
+        console.error('Failed to restart VAD:', error)
+      }
+    }
+  }
+
+  // ステータス表示用のテキストを生成
+  const getStatusText = () => {
+    if (micPermission === 'denied') return 'マイクアクセス拒否'
+    return vadStatus
+  }
+
+  const micStatus = vadStatus === '処理中...' ? 'active' : 'inactive'
 
   return (
     <div className="container">
@@ -179,7 +237,7 @@ function App() {
         <h1>議事録作成支援アプリ</h1>
         <div className="status">
           <div className={`status-indicator ${micStatus}`}></div>
-          <span>{vad.userSpeaking ? '話し中' : '音声認識中'}</span>
+          <span>{getStatusText()}</span>
         </div>
       </div>
       
@@ -192,6 +250,9 @@ function App() {
         </button>
         <button onClick={handleDownload} className="btn-secondary">
           ダウンロード
+        </button>
+        <button onClick={handleRestartVAD} className="btn-secondary">
+          VAD再起動
         </button>
       </div>
       
