@@ -40,8 +40,16 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
 
     useImperativeHandle(ref, () => ({
       appendText: (text: string) => {
-        if (providerRef.current) {
+        if (providerRef.current && cmInstanceRef.current) {
+          // スクロール位置をチェック
+          const wasAtBottom = isScrolledToBottom()
+          
           providerRef.current.appendTranscription(text)
+          
+          // 一番下にいた場合は自動スクロール
+          if (wasAtBottom) {
+            setTimeout(() => scrollToBottom(), 100)
+          }
         }
       },
       clearText: () => {
@@ -64,6 +72,25 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
         }
       }
     }))
+
+    // スクロール関連のヘルパー関数
+    const scrollToBottom = () => {
+      if (cmInstanceRef.current) {
+        const editor = cmInstanceRef.current
+        const lastLine = editor.lastLine()
+        editor.scrollTo(null, editor.heightAtLine(lastLine, 'local'))
+      }
+    }
+
+    const isScrolledToBottom = () => {
+      if (!cmInstanceRef.current) return false
+      
+      const editor = cmInstanceRef.current
+      const scrollInfo = editor.getScrollInfo()
+      const threshold = 50 // 50px以内なら「下にいる」と判定
+      
+      return (scrollInfo.top + scrollInfo.clientHeight + threshold >= scrollInfo.height)
+    }
 
     useEffect(() => {
       console.log('useEffect called - editorRef.current:', !!editorRef.current, 'cmInstanceRef.current:', !!cmInstanceRef.current)
