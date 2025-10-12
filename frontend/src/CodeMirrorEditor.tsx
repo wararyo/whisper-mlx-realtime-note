@@ -31,6 +31,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
     const providerRef = useRef<TranscribeProvider | null>(null)
     const bindingRef = useRef<CodemirrorBinding | null>(null)
     const onChangeRef = useRef(onChange)
+    const cmWrapperRef = useRef<HTMLElement | null>(null) // CodeMirrorのDOM要素を保存
 
     // onChangeが変わった時にrefを更新
     useEffect(() => {
@@ -66,12 +67,23 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
 
     useEffect(() => {
       console.log('useEffect called - editorRef.current:', !!editorRef.current, 'cmInstanceRef.current:', !!cmInstanceRef.current)
-      if (!editorRef.current) return
+      if (!editorRef.current) {
+        console.log('Editor ref not available, skipping initialization')
+        return
+      }
+      
       // 既にエディタが作成されている場合は早期リターン
-      if (cmInstanceRef.current) {
+      if (cmInstanceRef.current || cmWrapperRef.current) {
         console.log('Editor already exists, skipping initialization')
         return
       }
+      
+      // コンテナに既に子要素がある場合はクリア
+      if (editorRef.current.children.length > 0) {
+        console.log('Clearing existing content in editor container')
+        editorRef.current.innerHTML = ''
+      }
+      
       console.log('Initializing CodeMirror editor')
 
       // Y.jsドキュメントとプロバイダーを初期化
@@ -89,6 +101,9 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
         theme: 'default',
         viewportMargin: Infinity // 全てのテキストをレンダリング
       })
+
+      // CodeMirrorのWrapper要素を保存
+      cmWrapperRef.current = editor.getWrapperElement()
 
       // Y.jsとCodeMirrorをバインド
       const binding = new CodemirrorBinding(yText, editor, provider.awareness)
@@ -120,15 +135,28 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
         binding.destroy()
         provider.destroy()
         ydoc.destroy()
+        
         // CodeMirrorエディタの破棄
-        if (editorRef.current && editor.getWrapperElement().parentNode) {
-          editorRef.current.removeChild(editor.getWrapperElement())
+        console.log('Cleaning up DOM - cmWrapperRef:', !!cmWrapperRef.current, 'editorRef:', !!editorRef.current)
+        
+        // 保存したWrapper要素が存在し、かつ親要素がある場合に削除
+        if (cmWrapperRef.current && cmWrapperRef.current.parentNode) {
+          console.log('Removing CodeMirror wrapper element')
+          cmWrapperRef.current.parentNode.removeChild(cmWrapperRef.current)
         }
+        
+        // エディタの親要素が残っている場合はクリア
+        if (editorRef.current) {
+          console.log('Clearing editor container')
+          editorRef.current.innerHTML = ''
+        }
+        
         // refをクリア
         cmInstanceRef.current = null
         ydocRef.current = null
         providerRef.current = null
         bindingRef.current = null
+        cmWrapperRef.current = null
       }
     }, []) // 依存配列を空にして、コンポーネントのマウント時のみ実行
 

@@ -40,7 +40,7 @@ def transcribe():
        file.save(saved_filename)
        
        with lock:
-           result = mlx_whisper.transcribe(saved_filename, path_or_hf_repo=WHISPER_MODEL_NAME)
+           result = mlx_whisper.transcribe(saved_filename, path_or_hf_repo=WHISPER_MODEL_NAME, language='ja', fp16=True)
        
        # 結果をJSON形式で返す
        return jsonify(result), 200
