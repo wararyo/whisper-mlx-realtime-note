@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { CodeMirrorEditor, CodeMirrorEditorHandle } from './CodeMirrorEditor'
 import { VADManager, VADManagerHandle, AudioSourceSettings } from './VADManager'
 import './App.css'
@@ -6,16 +6,20 @@ import './App.css'
 const STORAGE_KEY = 'meeting-transcript'
 const AUTO_SAVE_INTERVAL = 10000 // 10秒ごとに自動保存
 
+type SaveStatus =
+  | { hasSaved: false }
+  | { hasSaved: true; lastSavedAt: Date; lastSaveType: 'auto' | 'manual' }
 
 function App() {
   const [transcript, setTranscript] = useState<string>('')
-  const [saveStatus, setSaveStatus] = useState<string>('準備中...')
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>({ hasSaved: false })
   const [vadStatus, setVadStatus] = useState<string>('初期化中...')
   const [micPermission, setMicPermission] = useState<string>('checking')
   const [audioSettings, setAudioSettings] = useState<AudioSourceSettings>({
     micEnabled: true,
     tabAudioEnabled: false
   })
+  const [isAudioSettingsOpen, setIsAudioSettingsOpen] = useState<boolean>(false)
   
   const editorRef = useRef<CodeMirrorEditorHandle>(null)
   const vadManagerRef = useRef<VADManagerHandle>(null)
@@ -56,12 +60,11 @@ function App() {
       setTimeout(() => {
         if (editorRef.current) {
           editorRef.current.setText(saved)
+          editorRef.current.scrollToBottom()
         }
       }, 100)
-      setSaveStatus('復元完了')
-    } else {
-      setSaveStatus('新規作成')
     }
+    setSaveStatus({ hasSaved: false })
   }, [])
 
   // 自動保存の設定
@@ -70,7 +73,11 @@ function App() {
       const currentText = editorRef.current?.getText() || transcript
       if (currentText) {
         localStorage.setItem(STORAGE_KEY, currentText)
-        setSaveStatus(`自動保存: ${new Date().toLocaleTimeString()}`)
+        setSaveStatus({ 
+          hasSaved: true, 
+          lastSavedAt: new Date(), 
+          lastSaveType: 'auto' 
+        })
       }
     }, AUTO_SAVE_INTERVAL)
 
@@ -84,14 +91,18 @@ function App() {
       }
       setTranscript('')
       localStorage.removeItem(STORAGE_KEY)
-      setSaveStatus('クリア完了')
+      setSaveStatus({ hasSaved: false })
     }
   }
 
   const handleManualSave = (): void => {
     const currentText = editorRef.current?.getText() || transcript
     localStorage.setItem(STORAGE_KEY, currentText)
-    setSaveStatus(`手動保存: ${new Date().toLocaleTimeString()}`)
+    setSaveStatus({ 
+      hasSaved: true, 
+      lastSavedAt: new Date(), 
+      lastSaveType: 'manual' 
+    })
   }
 
   const handleDownload = (): void => {
@@ -134,6 +145,13 @@ function App() {
 
   const micStatus = vadStatus === '処理中...' ? 'active' : 'inactive'
 
+  const saveStatusText = useMemo(() => {
+    if (!saveStatus.hasSaved) return ''
+    const timeStr = saveStatus.lastSavedAt.toLocaleTimeString()
+    const typeStr = saveStatus.lastSaveType === 'auto' ? '自動保存' : '手動保存'
+    return `${typeStr}: ${timeStr}`
+  }, [saveStatus])
+
   return (
     <div className="container">
       <div className="header">
@@ -144,29 +162,43 @@ function App() {
         </div>
       </div>
 
-      <div className="audio-settings">
-        <h3>音声ソース設定</h3>
-        <div className="audio-source-controls">
-          <label className="audio-source-option">
-            <input
-              type="checkbox"
-              checked={audioSettings.micEnabled}
-              onChange={(e) => handleAudioSettingsChange('micEnabled', e.target.checked)}
-            />
-            <span>マイク</span>
-          </label>
-          <label className="audio-source-option">
-            <input
-              type="checkbox"
-              checked={audioSettings.tabAudioEnabled}
-              onChange={(e) => handleAudioSettingsChange('tabAudioEnabled', e.target.checked)}
-            />
-            <span>タブの音声（画面共有）</span>
-          </label>
+      <div className="settings">
+        <div className="settings-header" onClick={() => setIsAudioSettingsOpen(!isAudioSettingsOpen)}>
+          <h2>設定</h2>
+          <span className={`toggle-arrow ${isAudioSettingsOpen ? 'open' : ''}`}>▼</span>
         </div>
-        {!audioSettings.micEnabled && !audioSettings.tabAudioEnabled && (
-          <div className="warning">
-            ⚠️ 少なくとも1つの音声ソースを選択してください
+        {isAudioSettingsOpen && (
+          <div className="settings-content">
+            <h3>音声ソース</h3>
+            <div className="settings-audio-sources">
+              <label className="audio-source-option">
+                <input
+                  type="checkbox"
+                  checked={audioSettings.micEnabled}
+                  onChange={(e) => handleAudioSettingsChange('micEnabled', e.target.checked)}
+                />
+                <span>マイク</span>
+              </label>
+              <label className="audio-source-option">
+                <input
+                  type="checkbox"
+                  checked={audioSettings.tabAudioEnabled}
+                  onChange={(e) => handleAudioSettingsChange('tabAudioEnabled', e.target.checked)}
+                />
+                <span>タブの音声（画面共有）</span>
+              </label>
+            </div>
+            {!audioSettings.micEnabled && !audioSettings.tabAudioEnabled && (
+              <div className="warning">
+                ⚠️ 少なくとも1つの音声ソースを選択してください
+              </div>
+            )}
+            <h3>アクション</h3>
+            <div className="settings-actions">
+              <button onClick={handleRestartVAD} className="btn-secondary">
+                VAD再起動
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -181,9 +213,9 @@ function App() {
         <button onClick={handleDownload} className="btn-secondary">
           ダウンロード
         </button>
-        <button onClick={handleRestartVAD} className="btn-secondary">
-          VAD再起動
-        </button>
+        <span className="save-status">
+          {saveStatusText}
+        </span>
       </div>
       
       <CodeMirrorEditor
@@ -192,10 +224,6 @@ function App() {
         onChange={setTranscript}
         placeholder="ここに議事録が自動的に追記されます。手動での編集も可能です。"
       />
-      
-      <div className="save-status">
-        自動保存: {saveStatus}
-      </div>
 
       <VADManager
         ref={vadManagerRef}

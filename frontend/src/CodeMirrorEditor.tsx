@@ -15,6 +15,7 @@ export interface CodeMirrorEditorHandle {
   clearText: () => void
   getText: () => string
   setText: (text: string) => void
+  scrollToBottom: () => void
 }
 
 interface CodeMirrorEditorProps {
@@ -70,7 +71,8 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
             providerRef.current.appendTranscription(text)
           }
         }
-      }
+      },
+      scrollToBottom: scrollToBottom
     }))
 
     // スクロール関連のヘルパー関数
@@ -93,7 +95,6 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
     }
 
     useEffect(() => {
-      console.log('useEffect called - editorRef.current:', !!editorRef.current, 'cmInstanceRef.current:', !!cmInstanceRef.current)
       if (!editorRef.current) {
         console.log('Editor ref not available, skipping initialization')
         return
@@ -126,7 +127,6 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
         lineWrapping: true,
         styleActiveLine: true,
         theme: 'default',
-        viewportMargin: Infinity // 全てのテキストをレンダリング
       })
 
       // CodeMirrorのWrapper要素を保存
@@ -162,9 +162,6 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
         binding.destroy()
         provider.destroy()
         ydoc.destroy()
-        
-        // CodeMirrorエディタの破棄
-        console.log('Cleaning up DOM - cmWrapperRef:', !!cmWrapperRef.current, 'editorRef:', !!editorRef.current)
         
         // 保存したWrapper要素が存在し、かつ親要素がある場合に削除
         if (cmWrapperRef.current && cmWrapperRef.current.parentNode) {

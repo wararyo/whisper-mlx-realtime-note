@@ -1,3 +1,9 @@
+/*
+ * VADの処理を行うモジュール
+ * vad-reactを使用したところ音声認識が開始されない問題が確認されたため、
+ * 不本意ながらCDN版を使用しています
+*/
+
 import { useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
 
 const ONNX_WASM_PATH = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/"
@@ -204,7 +210,11 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
           },
           onSpeechStart: () => {
             console.log("Speech started")
-            onStatusChange('話しています...')
+            onStatusChange('聴いています...')
+          },
+          onVADMisfire: () => {
+            console.log("VAD misfire")
+            onStatusChange('待機中')
           },
           onSpeechEnd: async (arr: Float32Array) => {
             console.log("Speech ended")
@@ -233,12 +243,12 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
                 }
               }
               
-              onStatusChange('音声認識中')
+              onStatusChange('待機中')
             } catch (err) {
               console.error(err)
               onStatusChange('エラー')
               setTimeout(() => {
-                onStatusChange('音声認識中')
+                onStatusChange('待機中')
               }, 2000)
             }
           }
@@ -247,7 +257,7 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
         vadRef.current = myvad
         myvad.start()
         console.log("音声認識を開始しました")
-        onStatusChange('音声認識中')
+        onStatusChange('待機中')
       } catch (e) {
         console.error("音声認識の初期化に失敗:", e)
         onStatusChange('初期化失敗')

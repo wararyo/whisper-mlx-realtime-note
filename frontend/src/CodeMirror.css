@@ -2,13 +2,16 @@
 @import url('codemirror/lib/codemirror.css');
 
 .CodeMirror {
-  height: 400px;
   width: 100%;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-  font-size: 14px;
-  line-height: 1.5;
+  height: 1400px;
+  max-height: 100%;
+  min-height: 400px;
+  font-size: 16px;
+  line-height: 1.6;
+  font-family: 'Helvetica Neue', Arial, sans-serif;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  resize: vertical;
 }
 
 .CodeMirror-focused {
@@ -48,10 +51,4 @@
   position: relative;
   width: 100%;
   margin: 20px 0;
-}
-
-.editor-container .CodeMirror {
-  resize: vertical;
-  min-height: 200px;
-  max-height: 600px;
 }
