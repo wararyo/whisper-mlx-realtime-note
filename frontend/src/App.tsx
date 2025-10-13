@@ -24,14 +24,28 @@ const API_BASE_URL = 'http://localhost:9000'
 const STORAGE_KEY = 'meeting-transcript'
 const AUTO_SAVE_INTERVAL = 10000 // 10秒ごとに自動保存
 
+// 音声ソース設定の型定義
+interface AudioSourceSettings {
+  micEnabled: boolean
+  tabAudioEnabled: boolean
+}
+
 function App() {
   const [transcript, setTranscript] = useState<string>('')
   const [saveStatus, setSaveStatus] = useState<string>('準備中...')
   const [vadStatus, setVadStatus] = useState<string>('初期化中...')
   const [micPermission, setMicPermission] = useState<string>('checking')
+  const [audioSettings, setAudioSettings] = useState<AudioSourceSettings>({
+    micEnabled: true,
+    tabAudioEnabled: false
+  })
   
   const editorRef = useRef<CodeMirrorEditorHandle>(null)
   const vadRef = useRef<any>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const micStreamRef = useRef<MediaStream | null>(null)
+  const tabStreamRef = useRef<MediaStream | null>(null)
+  const combinedStreamRef = useRef<MediaStream | null>(null)
 
   // テキストを議事録に追加する関数
   const appendToTranscript = (text: string) => {
@@ -44,6 +58,93 @@ function App() {
   // 保存状況を更新する関数
   const updateSaveStatus = (status: string) => {
     setSaveStatus(status)
+  }
+
+  // 音声ストリーム管理関数
+  const getTabAudioStream = async (): Promise<MediaStream> => {
+    const stream = await navigator.mediaDevices.getDisplayMedia({ 
+      audio: true,
+    })
+
+    // 音声トラックが含まれているかチェック
+    const audioTracks = stream.getAudioTracks()
+    if (audioTracks.length === 0) {
+      stream.getTracks().forEach(track => track.stop())
+      throw new Error('タブの音声が共有されていません。共有時に音声を含めるにチェックを入れてください。')
+    }
+
+    // ビデオトラックを停止（音声のみ使用）
+    stream.getVideoTracks().forEach(track => track.stop())
+
+    return stream
+  }
+
+  const combineAudioStreams = async (micStream: MediaStream | null, tabStream: MediaStream | null): Promise<MediaStream> => {
+    // 既存のAudioContextをクリーンアップ
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      await audioContextRef.current.close()
+    }
+
+    audioContextRef.current = new AudioContext()
+    const destination = audioContextRef.current.createMediaStreamDestination()
+
+    // 各音声ソースを作成して接続
+    if (micStream) {
+      const micSource = audioContextRef.current.createMediaStreamSource(micStream)
+      micSource.connect(destination)
+    }
+
+    if (tabStream) {
+      const tabSource = audioContextRef.current.createMediaStreamSource(tabStream)
+      tabSource.connect(destination)
+    }
+
+    return destination.stream
+  }
+
+  const setupAudioStreams = async (): Promise<MediaStream> => {
+    let micStream: MediaStream | null = null
+    let tabStream: MediaStream | null = null
+
+    try {
+      // マイク音声取得
+      if (audioSettings.micEnabled) {
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        micStreamRef.current = micStream
+      }
+
+      // タブ音声取得
+      if (audioSettings.tabAudioEnabled) {
+        tabStream = await getTabAudioStream()
+        tabStreamRef.current = tabStream
+      }
+
+      // 音声ストリームを結合
+      const combinedStream = await combineAudioStreams(micStream, tabStream)
+      combinedStreamRef.current = combinedStream
+
+      return combinedStream
+    } catch (error) {
+      // エラー時はストリームをクリーンアップ
+      micStream?.getTracks().forEach(track => track.stop())
+      tabStream?.getTracks().forEach(track => track.stop())
+      throw error
+    }
+  }
+
+  const cleanupAudioStreams = () => {
+    micStreamRef.current?.getTracks().forEach(track => track.stop())
+    tabStreamRef.current?.getTracks().forEach(track => track.stop())
+    combinedStreamRef.current?.getTracks().forEach(track => track.stop())
+    
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      audioContextRef.current.close()
+    }
+
+    micStreamRef.current = null
+    tabStreamRef.current = null
+    combinedStreamRef.current = null
+    audioContextRef.current = null
   }
 
   // マイクロフォン権限の確認
@@ -88,6 +189,21 @@ function App() {
           preSpeechPadFrames: 8,
           redemptionFrames: 10,
           model: 'v5',
+          onnxWASMBasePath: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/",
+          baseAssetPath: "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.28/dist/",
+          getStream: async () => {
+            try {
+              // 音声設定に基づいてストリームを取得
+              if (!audioSettings.micEnabled && !audioSettings.tabAudioEnabled) {
+                throw new Error('音声ソースが選択されていません')
+              }
+              
+              return await setupAudioStreams()
+            } catch (error) {
+              console.error('Audio stream setup failed:', error)
+              throw error
+            }
+          },
           onSpeechStart: () => {
             console.log("Speech started")
             setVadStatus('話しています...')
@@ -135,13 +251,23 @@ function App() {
         console.error("音声認識の初期化に失敗:", e)
         setVadStatus('初期化失敗')
         updateSaveStatus('音声認識の初期化に失敗しました')
+        cleanupAudioStreams()
       }
     }
 
     if (micPermission === 'granted') {
       initVAD()
     }
-  }, [micPermission])
+
+    // クリーンアップ関数
+    return () => {
+      if (vadRef.current) {
+        vadRef.current.pause()
+        vadRef.current = null
+      }
+      cleanupAudioStreams()
+    }
+  }, [micPermission, audioSettings])
 
   // ページロード時に保存されたテキストを復元
   useEffect(() => {
@@ -223,6 +349,14 @@ function App() {
     }
   }
 
+  // 音声ソース設定のハンドル関数
+  const handleAudioSettingsChange = (setting: keyof AudioSourceSettings, enabled: boolean) => {
+    setAudioSettings(prev => ({
+      ...prev,
+      [setting]: enabled
+    }))
+  }
+
   // ステータス表示用のテキストを生成
   const getStatusText = () => {
     if (micPermission === 'denied') return 'マイクアクセス拒否'
@@ -239,6 +373,33 @@ function App() {
           <div className={`status-indicator ${micStatus}`}></div>
           <span>{getStatusText()}</span>
         </div>
+      </div>
+
+      <div className="audio-settings">
+        <h3>音声ソース設定</h3>
+        <div className="audio-source-controls">
+          <label className="audio-source-option">
+            <input
+              type="checkbox"
+              checked={audioSettings.micEnabled}
+              onChange={(e) => handleAudioSettingsChange('micEnabled', e.target.checked)}
+            />
+            <span>マイク</span>
+          </label>
+          <label className="audio-source-option">
+            <input
+              type="checkbox"
+              checked={audioSettings.tabAudioEnabled}
+              onChange={(e) => handleAudioSettingsChange('tabAudioEnabled', e.target.checked)}
+            />
+            <span>タブの音声（画面共有）</span>
+          </label>
+        </div>
+        {!audioSettings.micEnabled && !audioSettings.tabAudioEnabled && (
+          <div className="warning">
+            ⚠️ 少なくとも1つの音声ソースを選択してください
+          </div>
+        )}
       </div>
       
       <div className="controls">
