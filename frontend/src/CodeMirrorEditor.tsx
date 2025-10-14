@@ -1,14 +1,15 @@
 import { useEffect, useRef, useImperativeHandle, forwardRef } from 'react'
 import * as Y from 'yjs'
-// @ts-ignore
-import { CodemirrorBinding } from 'y-codemirror'
-import CodeMirror from 'codemirror'
+import { yCollab } from 'y-codemirror.next'
+import { EditorView, lineNumbers, highlightActiveLine } from '@codemirror/view'
+import { EditorState } from '@codemirror/state'
+import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
+import { syntaxHighlighting, HighlightStyle } from '@codemirror/language'
+import { tags } from '@lezer/highlight'
+import { markdown } from '@codemirror/lang-markdown'
+import { keymap } from '@codemirror/view'
 import { TranscribeProvider } from './TranscribeProvider'
 import './CodeMirror.css'
-
-// CodeMirrorのモードとアドオンをインポート
-import 'codemirror/mode/markdown/markdown'
-import 'codemirror/addon/selection/active-line'
 
 export interface CodeMirrorEditorHandle {
   appendText: (text: string) => void
@@ -27,10 +28,9 @@ interface CodeMirrorEditorProps {
 export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEditorProps>(
   ({ initialValue = '', onChange }, ref) => {
     const editorRef = useRef<HTMLDivElement>(null)
-    const cmInstanceRef = useRef<CodeMirror.Editor | null>(null)
+    const cmViewRef = useRef<EditorView | null>(null)
     const ydocRef = useRef<Y.Doc | null>(null)
     const providerRef = useRef<TranscribeProvider | null>(null)
-    const bindingRef = useRef<CodemirrorBinding | null>(null)
     const onChangeRef = useRef(onChange)
     const cmWrapperRef = useRef<HTMLElement | null>(null) // CodeMirrorのDOM要素を保存
 
@@ -41,7 +41,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
 
     useImperativeHandle(ref, () => ({
       appendText: (text: string) => {
-        if (providerRef.current && cmInstanceRef.current) {
+        if (providerRef.current && cmViewRef.current) {
           // スクロール位置をチェック
           const wasAtBottom = isScrolledToBottom()
           
@@ -77,21 +77,24 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
 
     // スクロール関連のヘルパー関数
     const scrollToBottom = () => {
-      if (cmInstanceRef.current) {
-        const editor = cmInstanceRef.current
-        const lastLine = editor.lastLine()
-        editor.scrollTo(null, editor.heightAtLine(lastLine, 'local'))
+      if (cmViewRef.current) {
+        const view = cmViewRef.current
+        const lastLine = view.state.doc.lines
+        const lastLineStart = view.state.doc.line(lastLine).from
+        view.dispatch({
+          effects: EditorView.scrollIntoView(lastLineStart, { y: 'end' })
+        })
       }
     }
 
     const isScrolledToBottom = () => {
-      if (!cmInstanceRef.current) return false
+      if (!cmViewRef.current) return false
       
-      const editor = cmInstanceRef.current
-      const scrollInfo = editor.getScrollInfo()
+      const view = cmViewRef.current
+      const { scrollTop, scrollHeight, clientHeight } = view.scrollDOM
       const threshold = 50 // 50px以内なら「下にいる」と判定
       
-      return (scrollInfo.top + scrollInfo.clientHeight + threshold >= scrollInfo.height)
+      return (scrollTop + clientHeight + threshold >= scrollHeight)
     }
 
     useEffect(() => {
@@ -101,7 +104,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
       }
       
       // 既にエディタが作成されている場合は早期リターン
-      if (cmInstanceRef.current || cmWrapperRef.current) {
+      if (cmViewRef.current || cmWrapperRef.current) {
         console.log('Editor already exists, skipping initialization')
         return
       }
@@ -112,62 +115,74 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
         editorRef.current.innerHTML = ''
       }
       
-      console.log('Initializing CodeMirror editor')
+      console.log('Initializing CodeMirror v6 editor')
 
       // Y.jsドキュメントとプロバイダーを初期化
       const ydoc = new Y.Doc()
       const yText = ydoc.getText('transcript')
       const provider = new TranscribeProvider(ydoc, 'transcript')
 
-      // CodeMirrorエディタを初期化
-      const editor = CodeMirror(editorRef.current, {
-        value: initialValue,
-        mode: 'markdown',
-        lineNumbers: true,
-        lineWrapping: true,
-        styleActiveLine: true,
-        theme: 'default',
-      })
-
-      // CodeMirrorのWrapper要素を保存
-      cmWrapperRef.current = editor.getWrapperElement()
-
-      // Y.jsとCodeMirrorをバインド
-      const binding = new CodemirrorBinding(yText, editor, provider.awareness)
-
       // 初期値がある場合は設定
       if (initialValue) {
         yText.insert(0, initialValue)
       }
 
-      // Y.Textの変更を監視してonChangeを呼び出し
-      const updateHandler = () => {
-        // onChangeRefから最新のonChange関数を取得
-        if (onChangeRef.current) {
-          onChangeRef.current(yText.toString())
-        }
-      }
-      yText.observe(updateHandler)
+      // カスタムハイライトスタイルを定義
+      const highlightStyle = HighlightStyle.define([
+        { tag: tags.heading1, color: 'black', fontSize: '1.4em', fontWeight: '700' },
+        { tag: tags.heading2, color: 'black', fontSize: '1.3em', fontWeight: '700' },
+        { tag: tags.heading3, color: 'black', fontSize: '1.2em', fontWeight: '700' },
+        { tag: tags.heading4, color: 'black', fontSize: '1.1em', fontWeight: '700' },
+        { tag: tags.strong, color: 'black', fontWeight: '700' }, // 太字
+        { tag: tags.quote, color: '#6a737d' }, // 引用
+        { tag: tags.emphasis, fontStyle: 'italic' }, // 斜体
+        { tag: tags.url, textDecoration: 'underline' }, // URLに下線をつける
+        { tag: tags.strikethrough, textDecoration: 'line-through' }, // 打ち消し線（GFM拡張）
+      ])
+
+      // CodeMirror v6のエクステンションを設定
+      const extensions = [
+        history(),
+        keymap.of([...defaultKeymap, ...historyKeymap]),
+        lineNumbers(),
+        highlightActiveLine(),
+        EditorView.lineWrapping,
+        syntaxHighlighting(highlightStyle),
+        markdown(),
+        yCollab(yText, provider.awareness),
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged && onChangeRef.current) {
+            onChangeRef.current(update.state.doc.toString())
+          }
+        })
+      ]
+
+      // EditorStateを作成
+      const state = EditorState.create({
+        doc: yText.toString(),
+        extensions
+      })
+
+      // EditorViewを作成
+      const view = new EditorView({
+        state,
+        parent: editorRef.current
+      })
+
+      // CodeMirrorのDOM要素を保存
+      cmWrapperRef.current = view.dom
 
       // Refに保存
-      cmInstanceRef.current = editor
+      cmViewRef.current = view
       ydocRef.current = ydoc
       providerRef.current = provider
-      bindingRef.current = binding
 
       // クリーンアップ関数
       return () => {
-        console.log('Cleaning up CodeMirror editor')
-        yText.unobserve(updateHandler)
-        binding.destroy()
+        console.log('Cleaning up CodeMirror v6 editor')
+        view.destroy()
         provider.destroy()
         ydoc.destroy()
-        
-        // 保存したWrapper要素が存在し、かつ親要素がある場合に削除
-        if (cmWrapperRef.current && cmWrapperRef.current.parentNode) {
-          console.log('Removing CodeMirror wrapper element')
-          cmWrapperRef.current.parentNode.removeChild(cmWrapperRef.current)
-        }
         
         // エディタの親要素が残っている場合はクリア
         if (editorRef.current) {
@@ -176,10 +191,9 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
         }
         
         // refをクリア
-        cmInstanceRef.current = null
+        cmViewRef.current = null
         ydocRef.current = null
         providerRef.current = null
-        bindingRef.current = null
         cmWrapperRef.current = null
       }
     }, []) // 依存配列を空にして、コンポーネントのマウント時のみ実行

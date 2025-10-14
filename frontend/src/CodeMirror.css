@@ -1,11 +1,10 @@
-/* CodeMirror styles */
-@import url('codemirror/lib/codemirror.css');
+/* CodeMirror v6 styles */
 
-.CodeMirror {
+.cm-editor {
   width: 100%;
   height: 1400px;
   max-height: 100%;
-  min-height: 400px;
+  min-height: 200px;
   font-size: 16px;
   line-height: 1.6;
   font-family: 'Helvetica Neue', Arial, sans-serif;
@@ -14,24 +13,18 @@
   resize: vertical;
 }
 
-.CodeMirror-focused {
+.cm-editor.cm-focused {
   border-color: #007acc;
   box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.1);
 }
 
-/* Shared cursor styles */
-.remote-caret {
-  position: absolute;
-  border-left: #007acc;
-  border-left-style: solid;
-  border-left-width: 2px;
-  height: 1em;
-  z-index: 10;
+.cm-content {
+  font-family: 'Helvetica Neue', Arial, sans-serif;
 }
 
-.remote-caret > div {
-  position: relative;
-  top: -1.05em;
+/* Y.js collaboration cursor styles for CodeMirror v6 */
+.cm-ySelectionInfo {
+  position: absolute;
   font-size: 13px;
   background-color: #007acc;
   font-family: sans-serif;
@@ -40,10 +33,27 @@
   line-height: normal;
   user-select: none;
   color: white;
-  padding-left: 4px;
-  padding-right: 4px;
+  padding: 2px 4px;
   border-radius: 2px;
   z-index: 11;
+  top: -1.2em;
+}
+
+.cm-ySelectionCaret {
+  position: absolute;
+  border-left: 2px solid #007acc;
+  height: 1em;
+  z-index: 10;
+}
+
+.cm-ySelectionCaretDot {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background-color: #007acc;
+  border-radius: 50%;
+  top: -2px;
+  left: -1px;
 }
 
 /* Editor container styles */
