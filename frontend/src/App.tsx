@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { CodeMirrorEditor, CodeMirrorEditorHandle } from './CodeMirrorEditor'
-import { VADManager, VADManagerHandle, AudioSourceSettings } from './VADManager'
+import { VADManager, VADManagerHandle, AudioSourceSettings, VADEvent } from './VADManager'
 import './App.css'
 
 const STORAGE_KEY = 'meeting-transcript'
@@ -23,12 +23,125 @@ function App() {
   
   const editorRef = useRef<CodeMirrorEditorHandle>(null)
   const vadManagerRef = useRef<VADManagerHandle>(null)
+  
+  // テキストエディタの末尾に表示される、現在の状態を表すチップは基本的にCodeMirrorEditorで管理している
+  // VAD側では発話が完了してから初めてidentifierが発行されるが、チップは発話開始前から表示したいため、
+  // VADのidentifierとChipのidentifierは別々に管理する必要がある
+  // したがって、VADのidentifierとChipのidentifierの対応関係を保持するMapを用意する
+  // KeyがChipのidentifier、ValueがVADのidentifier
+  const chipsRelationRef = useRef<Map<string, string | null>>(new Map())
+  // listeningチップのID
+  const currentListeningChipRef = useRef<string | null>(null)
 
   // テキストを議事録に追加する関数
   const appendToTranscript = (text: string) => {
     if (editorRef.current) {
       editorRef.current.appendText(text)
       setTranscript(editorRef.current.getText())
+    }
+  }
+
+  // VADのイベントを処理する関数
+  const handleVadEvent = (event: VADEvent) => {
+    if (!editorRef.current) return
+
+    switch (event.type) {
+      case 'startInitializing':
+        setVadStatus('VAD初期化中...')
+        break
+        
+      case 'ready':
+        setVadStatus('待機中')
+        // すべての処理中チップを削除
+        chipsRelationRef.current.forEach((chipIdentifier, _) => {
+          if (chipIdentifier !== null) editorRef.current?.removeStatusChip(chipIdentifier)
+        })
+        chipsRelationRef.current.clear()
+        // listeningチップを追加
+        {
+          const newIdentifier = Date.now().toString()
+          editorRef.current.addStatusChip({
+            identifier: newIdentifier,
+            type: 'ready',
+            text: '話すのを待っています…',
+          })
+          chipsRelationRef.current.set(newIdentifier, null)
+          currentListeningChipRef.current = newIdentifier
+        }
+        break
+        
+      case 'startListening':
+        setVadStatus('聴いています...')
+        // listeningチップの状態を変更
+        if (currentListeningChipRef.current !== null) {
+          editorRef.current.updateStatusChip(currentListeningChipRef.current, 'listening', '聴いています…')
+        }
+        break
+        
+      case 'misfire':
+        setVadStatus('待機中')
+        // listeningチップの状態を変更
+        if (currentListeningChipRef.current !== null) {
+          editorRef.current.updateStatusChip(currentListeningChipRef.current, 'ready', '話すのを待っています…')
+        }
+        break
+
+      case 'startProcessing':
+        setVadStatus('処理中...')
+        // 現在の聴いているチップを処理中チップに変更
+        if (currentListeningChipRef.current !== null) {
+          chipsRelationRef.current.set(currentListeningChipRef.current, event.identifier)
+          editorRef.current.updateStatusChip(currentListeningChipRef.current, 'processing', '音声認識中...')
+        }
+        // 新しいlisteningチップを追加
+        {
+          const newIdentifier = Date.now().toString()
+          editorRef.current.addStatusChip({
+            identifier: newIdentifier,
+            type: 'ready',
+            text: '話すのを待っています…',
+          })
+          chipsRelationRef.current.set(newIdentifier, null)
+          currentListeningChipRef.current = newIdentifier
+        }
+        break
+        
+      case 'processed':
+        // 対応する処理中チップを削除
+        {
+          const vadIdentifier = event.identifier
+          const chipIdentifier = Array.from(chipsRelationRef.current.entries())
+            .find(([_, vadId]) => vadId === vadIdentifier)?.[0]
+          if (chipIdentifier) {
+            editorRef.current.removeStatusChip(chipIdentifier)
+            chipsRelationRef.current.delete(chipIdentifier)
+          }
+        }
+        // テキストを追加
+        appendToTranscript(event.transcript)
+        break
+        
+      case 'error':
+        setVadStatus('エラー')
+        // 2秒後に待機中に戻す
+        setTimeout(() => {
+          setVadStatus('待機中')
+        }, 2000)
+        // エラーが発生したチップを更新
+        {
+          const vadIdentifier = event.identifier
+          const chipIdentifier = Array.from(chipsRelationRef.current.entries())
+            .find(([_, vadId]) => vadId === vadIdentifier)?.[0]
+          if (chipIdentifier) {
+            editorRef.current.updateStatusChip(chipIdentifier, 'error', 'エラーが発生しました')
+            // 2秒後に削除
+            setTimeout(() => {
+              if (editorRef.current) editorRef.current.removeStatusChip(chipIdentifier)
+              chipsRelationRef.current.delete(chipIdentifier)
+            }, 2000)
+          }
+        }
+        break
     }
   }
 
@@ -229,8 +342,7 @@ function App() {
         ref={vadManagerRef}
         audioSettings={audioSettings}
         micPermission={micPermission}
-        onStatusChange={setVadStatus}
-        onTranscriptReceived={appendToTranscript}
+        onEvent={handleVadEvent}
       />
     </div>
   )

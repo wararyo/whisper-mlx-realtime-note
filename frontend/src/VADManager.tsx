@@ -2,6 +2,7 @@
  * VADの処理を行うモジュール
  * vad-reactを使用したところ音声認識が開始されない問題が確認されたため、
  * 不本意ながらCDN版を使用しています
+ * VADと言いながらSTTもここでしているため名前を変更したほうがいいかもしれない
 */
 
 import { useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
@@ -34,12 +35,21 @@ export interface AudioSourceSettings {
   tabAudioEnabled: boolean
 }
 
+export type VADEvent = 
+  | { type: 'startInitializing' }
+  | { type: 'ready' }
+  | { type: 'frameProcessed'; probability: number }
+  | { type: 'startListening' }
+  | { type: 'misfire' }
+  | { type: 'startProcessing'; identifier: string }
+  | { type: 'processed'; identifier: string; transcript: string }
+  | { type: 'error'; identifier: (string | null); message: string }
+
 interface VADManagerProps {
   audioSettings: AudioSourceSettings
   micPermission: string
   withTimestamp?: boolean
-  onStatusChange: (status: string) => void
-  onTranscriptReceived: (text: string) => void
+  onEvent: (event: VADEvent) => void
 }
 
 // VADManagerの参照型
@@ -51,8 +61,7 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
   audioSettings,
   micPermission,
   withTimestamp,
-  onStatusChange,
-  onTranscriptReceived
+  onEvent
 }, ref) => {
   const vadRef = useRef<any>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -192,7 +201,7 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
         }
 
         console.log('Initializing VAD...')
-        onStatusChange('VAD初期化中...')
+        onEvent({ type: 'startInitializing' })
 
         const myvad = await window.vad.MicVAD.new({
           positiveSpeechThreshold: 0.4,
@@ -218,15 +227,19 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
           },
           onSpeechStart: () => {
             console.log("Speech started")
-            onStatusChange('聴いています...')
+            onEvent({ type: 'startListening' })
+          },
+          onFrameProcessed: (probabilities: { isSpeech: number; notSpeech: number }, _: Float32Array) => {
+            onEvent({ type: 'frameProcessed', probability: probabilities.isSpeech })
           },
           onVADMisfire: () => {
             console.log("VAD misfire")
-            onStatusChange('待機中')
+            onEvent({ type: 'misfire' })
           },
           onSpeechEnd: async (arr: Float32Array) => {
             console.log("Speech ended")
-            onStatusChange('処理中...')
+            const identifier = Date.now().toString()
+            onEvent({ type: 'startProcessing', identifier })
             
             try {
               const wavBuffer = window.vad.utils.encodeWAV(arr)
@@ -266,14 +279,12 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
                 }
               }
               
-              if (text) onTranscriptReceived(text)
-              onStatusChange('待機中')
+              if (text) {
+                onEvent({ type: 'processed', identifier, transcript: text })
+              }
             } catch (err) {
               console.error(err)
-              onStatusChange('エラー')
-              setTimeout(() => {
-                onStatusChange('待機中')
-              }, 2000)
+              onEvent({ type: 'error', identifier, message: err instanceof Error ? err.message : 'Unknown error' })
             }
           }
         })
@@ -281,10 +292,10 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
         vadRef.current = myvad
         myvad.start()
         console.log("音声認識を開始しました")
-        onStatusChange('待機中')
+        onEvent({ type: 'ready' })
       } catch (e) {
         console.error("音声認識の初期化に失敗:", e)
-        onStatusChange('初期化失敗')
+        onEvent({ type: 'error', identifier: null, message: e instanceof Error ? e.message : 'Unknown error' })
         cleanupAudioStreams()
       }
     }

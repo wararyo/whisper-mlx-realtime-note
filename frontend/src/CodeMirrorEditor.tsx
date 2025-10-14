@@ -1,8 +1,8 @@
 import { useEffect, useRef, useImperativeHandle, forwardRef } from 'react'
 import * as Y from 'yjs'
 import { yCollab } from 'y-codemirror.next'
-import { EditorView, lineNumbers, highlightActiveLine } from '@codemirror/view'
-import { EditorState } from '@codemirror/state'
+import { EditorView, lineNumbers, Decoration, WidgetType } from '@codemirror/view'
+import { EditorState, StateField, StateEffect } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { syntaxHighlighting, HighlightStyle } from '@codemirror/language'
 import { tags } from '@lezer/highlight'
@@ -11,12 +11,122 @@ import { keymap } from '@codemirror/view'
 import { TranscribeProvider } from './TranscribeProvider'
 import './CodeMirror.css'
 
+// ステータスチップの種類
+export type StatusChipType = 'ready' | 'listening' | 'processing' | 'error'
+
+// ステータスチップのデータ
+export interface StatusChip {
+  identifier: string
+  type: StatusChipType
+  text: string
+}
+
+// ステータスチップを管理するStateEffect
+const addStatusChipEffect = StateEffect.define<StatusChip>()
+const removeStatusChipEffect = StateEffect.define<string>() // chip id
+const updateStatusChipEffect = StateEffect.define<{ id: string; type: StatusChipType | null; text: string | null }>()
+
+// ステータスチップウィジェット
+class StatusChipWidget extends WidgetType {
+  constructor(private chip: StatusChip) {
+    super()
+  }
+
+  toDOM() {
+    const element = document.createElement('span')
+    element.className = `status-chip status-chip-${this.chip.type}`
+    element.textContent = this.chip.text
+    element.setAttribute('data-chip-id', this.chip.identifier)
+    return element
+  }
+
+  eq(other: StatusChipWidget) {
+    return this.chip.identifier === other.chip.identifier && 
+           this.chip.text === other.chip.text && 
+           this.chip.type === other.chip.type
+  }
+
+  updateDOM(dom: HTMLElement): boolean {
+    if (dom.getAttribute('data-chip-id') === this.chip.identifier) {
+      // DOM要素のクラス名とテキストを更新
+      const newClassName = `status-chip status-chip-${this.chip.type}`
+      dom.className = newClassName
+      dom.textContent = this.chip.text
+      return true // 更新が成功したことを示す
+    }
+    return false // 更新されなかったことを示す
+  }
+
+  get estimatedHeight() {
+    return 20
+  }
+}
+
+// ステータスチップを管理するStateField
+const statusChipsField = StateField.define<StatusChip[]>({
+  create: () => [],
+  update: (chips, tr) => {
+    for (const effect of tr.effects) {
+      if (effect.is(addStatusChipEffect)) {
+        // 同じIDのチップがあれば置き換え
+        const existingIndex = chips.findIndex(chip => chip.identifier === effect.value.identifier)
+        if (existingIndex >= 0) {
+          chips = [...chips.slice(0, existingIndex), effect.value, ...chips.slice(existingIndex + 1)]
+        } else {
+          chips = [...chips, effect.value]
+        }
+      } else if (effect.is(removeStatusChipEffect)) {
+        chips = chips.filter(chip => chip.identifier !== effect.value)
+      } else if (effect.is(updateStatusChipEffect)) {
+        console.log('Updating status chip:', effect.value)
+        chips = chips.map(chip => 
+          chip.identifier === effect.value.id 
+            ? { ...chip, ...(effect.value.type ? {type: effect.value.type} : {}), ...(effect.value.text ? {text: effect.value.text} : {}) }
+            : chip
+        )
+        console.log('Updated chips:', chips)
+      }
+    }
+    return chips
+  }
+})
+
+// ステータスチップ用のエクステンション
+const statusChipExtension = [
+  statusChipsField,
+  EditorView.decorations.from(statusChipsField, (chips: StatusChip[]) => {
+    return (view: EditorView) => {
+      const decorations: any[] = []
+      
+      if (chips.length > 0) {
+        const doc = view.state.doc
+        const lastLine = doc.lines
+        const lastLineEnd = doc.line(lastLine).to
+        
+        chips.forEach((chip: StatusChip) => {
+          const decoration = Decoration.widget({
+            widget: new StatusChipWidget(chip),
+            side: 1,
+            block: false
+          })
+          decorations.push(decoration.range(lastLineEnd))
+        })
+      }
+      
+      return Decoration.set(decorations)
+    }
+  })
+]
+
 export interface CodeMirrorEditorHandle {
   appendText: (text: string) => void
   clearText: () => void
   getText: () => string
   setText: (text: string) => void
   scrollToBottom: () => void
+  addStatusChip: (chip: StatusChip) => void
+  removeStatusChip: (chipId: string) => void
+  updateStatusChip: (chipId: string, type: StatusChipType | null, text: string | null) => void
 }
 
 interface CodeMirrorEditorProps {
@@ -72,7 +182,28 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
           }
         }
       },
-      scrollToBottom: scrollToBottom
+      scrollToBottom: scrollToBottom,
+      addStatusChip: (chip: StatusChip) => {
+        if (cmViewRef.current) {
+          cmViewRef.current.dispatch({
+            effects: addStatusChipEffect.of(chip)
+          })
+        }
+      },
+      removeStatusChip: (chipId: string) => {
+        if (cmViewRef.current) {
+          cmViewRef.current.dispatch({
+            effects: removeStatusChipEffect.of(chipId)
+          })
+        }
+      },
+      updateStatusChip: (chipId: string, type: StatusChipType | null, text: string | null) => {
+        if (cmViewRef.current) {
+          cmViewRef.current.dispatch({
+            effects: updateStatusChipEffect.of({ id: chipId, type, text })
+          })
+        }
+      }
     }))
 
     // スクロール関連のヘルパー関数
@@ -145,11 +276,11 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
         history(),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         lineNumbers(),
-        highlightActiveLine(),
         EditorView.lineWrapping,
         syntaxHighlighting(highlightStyle),
         markdown(),
         yCollab(yText, provider.awareness),
+        statusChipExtension,
         EditorView.updateListener.of((update) => {
           if (update.docChanged && onChangeRef.current) {
             onChangeRef.current(update.state.doc.toString())

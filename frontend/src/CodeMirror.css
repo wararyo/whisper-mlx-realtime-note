@@ -62,3 +62,49 @@
   width: 100%;
   margin: 20px 0;
 }
+
+/* Status chip styles */
+.status-chip {
+  display: inline-block;
+  margin: 0 8px;
+  padding: 3px 16px 1px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 500;
+  color: white;
+  background-color: #6c757d;
+  user-select: none;
+  transform: translateY(-1px);
+  transition: background-color 0.2s ease;
+}
+
+.status-chip-ready {
+  background-color: white;
+  color: #6c757d;
+  border: 1px solid #6c757d;
+  animation: fadeIn 0.5s;
+}
+
+.status-chip-listening {
+  background-color: #28a745;
+  animation: chipPulse 2s infinite;
+}
+
+.status-chip-processing {
+  background-color: #28a745;
+  animation: chipPulse .5s infinite;
+}
+
+@keyframes chipPulse {
+  0%, 100% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 1.0;
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
