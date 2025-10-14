@@ -112,7 +112,14 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
     try {
       // マイク音声取得
       if (audioSettings.micEnabled) {
-        micStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        })
         micStreamRef.current = micStream
       }
 
@@ -188,11 +195,12 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
         onStatusChange('VAD初期化中...')
 
         const myvad = await window.vad.MicVAD.new({
-          positiveSpeechThreshold: 0.5,
-          negativeSpeechThreshold: 0.45,
-          minSpeechFrames: 3,
-          preSpeechPadFrames: 8,
-          redemptionFrames: 10,
+          positiveSpeechThreshold: 0.4,
+          negativeSpeechThreshold: 0.2,
+          minSpeechMs: 200,
+          preSpeechPadMs: 500,
+          redemptionMs: 500,
+          submitUserSpeechOnPause: true,
           model: 'v5',
           onnxWASMBasePath: ONNX_WASM_PATH,
           baseAssetPath: ASSET_PATH,
@@ -226,23 +234,39 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
               const formData = new FormData()
               formData.append("file", file)
               
-              const resp = await fetch(`${API_BASE_URL}/api/transcribe`, {
+              const responseText = await fetch(`${API_BASE_URL}/api/transcribe`, {
                 method: "POST",
                 body: formData,
               })
-              const resp2 = await resp.json()
-              console.log(resp2.text)
-              
-              if (resp2.text && resp2.text.trim()) {
-                const text = resp2.text.trim()
+              const response = await responseText.json()
+              console.log(response.text)
+
+              let text = ""
+
+              if (response.segments && Array.isArray(response.segments)) {
+                for (const segment of response.segments) {
+                  let segmentText = segment.text.trim()
+                  segmentText = segmentText?.replace(/ご視聴ありがとうございました。?/g, "") // 無音に近い音を渡すとよくこれに誤認識される
+                  if (!segmentText) continue
+                  if (segmentText.length > 20) segmentText += "\n" // 長い文は改行を追加
+                  else segmentText += " " // 短い文はスペースを追加
+                  if (withTimestamp) {
+                    const startTime = new Date(segment.start * 1000).toISOString().substr(11, 8)
+                    text += `[${startTime}] ${segmentText}`
+                  } else {
+                    text += segmentText
+                  }
+                }
+              } else if (response.text && response.text.trim) {
                 if (withTimestamp) {
-                  const timestamp = new Date().toLocaleTimeString()
-                  onTranscriptReceived(`[${timestamp}] ${text}`)
+                  const timestamp = new Date().toISOString().substr(11, 8)
+                  text = `[${timestamp}] ${response.text.trim()}`
                 } else {
-                  onTranscriptReceived(text)
+                  text = response.text.trim()
                 }
               }
               
+              if (text) onTranscriptReceived(text)
               onStatusChange('待機中')
             } catch (err) {
               console.error(err)

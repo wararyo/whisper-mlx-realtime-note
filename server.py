@@ -41,6 +41,12 @@ def transcribe():
        
        with lock:
            result = mlx_whisper.transcribe(saved_filename, path_or_hf_repo=WHISPER_MODEL_NAME, language='ja', fp16=True)
+
+       # avg_logprobがNaNになることがあるため、avg_logprobは取り除く
+       if 'segments' in result:
+           for segment in result['segments']:
+               if isinstance(segment, dict) and 'avg_logprob' in segment:
+                  del segment['avg_logprob']
        
        # 結果をJSON形式で返す
        return jsonify(result), 200
