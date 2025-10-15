@@ -13,7 +13,6 @@ type SaveStatus =
 function App() {
   const [transcript, setTranscript] = useState<string>('')
   const [saveStatus, setSaveStatus] = useState<SaveStatus>({ hasSaved: false })
-  const [vadStatus, setVadStatus] = useState<string>('初期化中...')
   const [micPermission, setMicPermission] = useState<string>('checking')
   const [audioSettings, setAudioSettings] = useState<AudioSourceSettings>({
     micEnabled: true,
@@ -49,8 +48,6 @@ function App() {
 
     switch (event.type) {
       case 'startInitializing':
-        setVadStatus('VAD初期化中...')
-        setVadStatus('待機中')
         // すべての処理中チップを削除
         chipsRelationRef.current.forEach((_, chipIdentifier) => {
           if (chipIdentifier !== null) editorRef.current?.removeStatusChip(chipIdentifier)
@@ -74,7 +71,6 @@ function App() {
         break
         
       case 'startListening':
-        setVadStatus('聴いています...')
         // listeningチップの状態を変更
         if (currentListeningChipRef.current !== null) {
           editorRef.current.updateStatusChip(currentListeningChipRef.current, 'listening', '聴いています…', null)
@@ -94,7 +90,6 @@ function App() {
         break
         
       case 'misfire':
-        setVadStatus('待機中')
         // listeningチップの状態を変更
         if (currentListeningChipRef.current !== null) {
           editorRef.current.updateStatusChip(currentListeningChipRef.current, 'ready', '話すのを待っています…', null)
@@ -109,7 +104,6 @@ function App() {
         break
 
       case 'startProcessing':
-        setVadStatus('処理中...')
         // 現在の聴いているチップを処理中チップに変更
         if (currentListeningChipRef.current !== null) {
           chipsRelationRef.current.set(currentListeningChipRef.current, event.identifier)
@@ -146,11 +140,6 @@ function App() {
         break
         
       case 'error':
-        setVadStatus('エラー')
-        // 2秒後に待機中に戻す
-        setTimeout(() => {
-          setVadStatus('待機中')
-        }, 2000)
         // エラーが発生したチップを更新
         {
           const vadIdentifier = event.identifier
@@ -274,14 +263,6 @@ function App() {
     }))
   }
 
-  // ステータス表示用のテキストを生成
-  const getStatusText = () => {
-    if (micPermission === 'denied') return 'マイクアクセス拒否'
-    return vadStatus
-  }
-
-  const micStatus = vadStatus === '処理中...' ? 'active' : 'inactive'
-
   const saveStatusText = useMemo(() => {
     if (!saveStatus.hasSaved) return ''
     const timeStr = saveStatus.lastSavedAt.toLocaleTimeString()
@@ -293,9 +274,19 @@ function App() {
     <div className="container">
       <div className="header">
         <h1>議事録作成支援アプリ</h1>
-        <div className="status">
-          <div className={`status-indicator ${micStatus}`}></div>
-          <span>{getStatusText()}</span>
+        <div className="controls">
+          <span className="save-status">
+            {saveStatusText}
+          </span>
+          <button onClick={handleManualSave} className="btn-primary">
+            手動保存
+          </button>
+          <button onClick={handleDownload} className="btn-secondary">
+            ダウンロード
+          </button>
+          <button onClick={handleClear} className="btn-danger">
+            クリア
+          </button>
         </div>
       </div>
 
@@ -338,21 +329,6 @@ function App() {
             </div>
           </div>
         )}
-      </div>
-      
-      <div className="controls">
-        <button onClick={handleClear} className="btn-danger">
-          クリア
-        </button>
-        <button onClick={handleManualSave} className="btn-primary">
-          手動保存
-        </button>
-        <button onClick={handleDownload} className="btn-secondary">
-          ダウンロード
-        </button>
-        <span className="save-status">
-          {saveStatusText}
-        </span>
       </div>
       
       <CodeMirrorEditor
