@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { CodeMirrorEditor, CodeMirrorEditorHandle } from './CodeMirrorEditor'
 import { VADManager, VADManagerHandle, AudioSourceSettings, VADEvent } from './VADManager'
 import './App.css'
@@ -34,15 +34,35 @@ function App() {
   // 発話が完了した後に少し間をおいて新しいlisteningチップを追加するためのタイマーID
   const listeningChipTimerRef = useRef<NodeJS.Timeout | null>(null)
 
-  // テキストを議事録に追加する関数
+  // 前回の保存からAUTO_SAVE_INTERVAL以上経過していたら自動保存を行う
+  const handleAutoSave = useCallback(() => {
+    const currentText = editorRef.current?.getText() || transcript
+    const now = new Date()
+    setSaveStatus(status => {
+      if (currentText && (!status.hasSaved || (now.getTime() - status.lastSavedAt.getTime() > AUTO_SAVE_INTERVAL))) {
+        localStorage.setItem(STORAGE_KEY, currentText)
+        return {
+          hasSaved: true, 
+          lastSavedAt: now,
+          lastSaveType: 'auto' 
+        }
+      }
+      return status
+    })
+  }, [transcript])
+
+  // テキストを議事録に追加する
   const appendToTranscript = (text: string) => {
     if (editorRef.current) {
       editorRef.current.appendText(text)
       setTranscript(editorRef.current.getText())
+
+      // 自動保存を試みる
+      handleAutoSave()
     }
   }
 
-  // VADのイベントを処理する関数
+  // VADのイベントを処理する
   const handleVadEvent = (event: VADEvent) => {
     if (!editorRef.current) return
 
@@ -175,8 +195,6 @@ function App() {
     checkMicPermission()
   }, [])
 
-
-
   // ページロード時に保存されたテキストを復元
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY)
@@ -192,23 +210,6 @@ function App() {
     }
     setSaveStatus({ hasSaved: false })
   }, [])
-
-  // 自動保存の設定
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const currentText = editorRef.current?.getText() || transcript
-      if (currentText) {
-        localStorage.setItem(STORAGE_KEY, currentText)
-        setSaveStatus({ 
-          hasSaved: true, 
-          lastSavedAt: new Date(), 
-          lastSaveType: 'auto' 
-        })
-      }
-    }, AUTO_SAVE_INTERVAL)
-
-    return () => clearInterval(interval)
-  }, [transcript])
 
   const handleClear = (): void => {
     if (window.confirm('すべてのテキストを削除しますか？')) {
@@ -335,6 +336,7 @@ function App() {
         ref={editorRef}
         initialValue={transcript}
         onChange={setTranscript}
+        onSaveRequested={handleManualSave}
         placeholder="ここに議事録が自動的に追記されます。手動での編集も可能です。"
       />
 

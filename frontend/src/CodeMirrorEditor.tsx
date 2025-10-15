@@ -1,4 +1,4 @@
-import { useEffect, useRef, useImperativeHandle, forwardRef } from 'react'
+import { useEffect, useRef, useImperativeHandle, forwardRef, useMemo } from 'react'
 import * as Y from 'yjs'
 import { yCollab } from 'y-codemirror.next'
 import { EditorView, lineNumbers, Decoration, WidgetType } from '@codemirror/view'
@@ -140,10 +140,11 @@ interface CodeMirrorEditorProps {
   initialValue?: string
   onChange?: (value: string) => void
   placeholder?: string
+  onSaveRequested?: () => void
 }
 
 export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEditorProps>(
-  ({ initialValue = '', onChange }, ref) => {
+  ({ initialValue = '', onChange, onSaveRequested }, ref) => {
     const editorRef = useRef<HTMLDivElement>(null)
     const cmViewRef = useRef<EditorView | null>(null)
     const ydocRef = useRef<Y.Doc | null>(null)
@@ -278,10 +279,24 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
         { tag: tags.strikethrough, textDecoration: 'line-through' }, // 打ち消し線（GFM拡張）
       ])
 
+      const customKeymap = [
+        {
+          key: 'Mod-s',
+          preventDefault: true,
+          run: () => {
+            if (onSaveRequested) {
+              onSaveRequested()
+              return true
+            }
+            return false
+          }
+        }
+      ]
+
       // CodeMirror v6のエクステンションを設定
       const extensions = [
         history(),
-        keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+        keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab, ...customKeymap]),
         indentUnit.of('    '), // インデントをスペース4つに設定
         EditorState.tabSize.of(4),
         lineNumbers(),
