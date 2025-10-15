@@ -68,7 +68,9 @@ function App() {
 
     switch (event.type) {
       case 'startInitializing':
-        // すべての処理中チップを削除
+        // すべてのチップを削除
+        if (listeningChipTimerRef.current) clearTimeout(listeningChipTimerRef.current)
+        currentListeningChipRef.current = null
         chipsRelationRef.current.forEach((_, chipIdentifier) => {
           if (chipIdentifier !== null) editorRef.current?.removeStatusChip(chipIdentifier)
         })
