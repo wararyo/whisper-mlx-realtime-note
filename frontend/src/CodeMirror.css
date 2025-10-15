@@ -66,19 +66,31 @@
 /* Status chip styles */
 .status-chip {
   display: inline-block;
-  margin: 0 8px;
-  padding: 3px 16px 1px;
+  margin: 0 16px 0 0;
+  padding: 3px 4px 1px;
+  text-align: center;
   border-radius: 16px;
   font-size: 12px;
   font-weight: 500;
   color: white;
   background-color: #6c757d;
   user-select: none;
-  transform: translateY(-1px);
-  transition: background-color 0.2s ease;
+  transition: background-color 0.2s ease, width 0.3s cubic-bezier(0, 0.75, 0.25, 1);
+}
+
+.status-chip-listening::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: calc(var(--level, 0) * 8px);
+  transform: translateY(calc(-4.5px + 50%));
+  margin-right: 4px;
+  border-radius: 4px;
+  background-color: currentColor;
 }
 
 .status-chip-ready {
+  width: 160px;
   background-color: white;
   color: #6c757d;
   border: 1px solid #6c757d;
@@ -86,12 +98,14 @@
 }
 
 .status-chip-listening {
+  width: 160px;
   background-color: #28a745;
   animation: chipPulse 2s infinite;
 }
 
 .status-chip-processing {
-  background-color: #28a745;
+  width: 32px;
+  background-color: #007acc;
   animation: chipPulse .5s infinite;
 }
 

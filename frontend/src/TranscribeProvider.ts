@@ -29,9 +29,7 @@ export class TranscribeProvider extends ObservableV2<{}> {
     }
 
     // Y.Textの末尾にテキストを追加
-    const currentText = this.yText.toString()
-    const separator = currentText ? '\n' : ''
-    const textToInsert = separator + text.trim()
+    const textToInsert = text.trim() + '\n'
     
     // トランザクションを使用して一度に追加
     this.doc.transact(() => {

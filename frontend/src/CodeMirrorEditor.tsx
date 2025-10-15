@@ -19,12 +19,13 @@ export interface StatusChip {
   identifier: string
   type: StatusChipType
   text: string
+  level: number // 音声の入力レベル(0.0 - 1.0)
 }
 
 // ステータスチップを管理するStateEffect
 const addStatusChipEffect = StateEffect.define<StatusChip>()
 const removeStatusChipEffect = StateEffect.define<string>() // chip id
-const updateStatusChipEffect = StateEffect.define<{ id: string; type: StatusChipType | null; text: string | null }>()
+const updateStatusChipEffect = StateEffect.define<{ id: string; type: StatusChipType | null; text: string | null; level: number | null }>()
 
 // ステータスチップウィジェット
 class StatusChipWidget extends WidgetType {
@@ -35,6 +36,7 @@ class StatusChipWidget extends WidgetType {
   toDOM() {
     const element = document.createElement('span')
     element.className = `status-chip status-chip-${this.chip.type}`
+    element.style.setProperty('--level', this.chip.level.toString())
     element.textContent = this.chip.text
     element.setAttribute('data-chip-id', this.chip.identifier)
     return element
@@ -43,7 +45,8 @@ class StatusChipWidget extends WidgetType {
   eq(other: StatusChipWidget) {
     return this.chip.identifier === other.chip.identifier && 
            this.chip.text === other.chip.text && 
-           this.chip.type === other.chip.type
+           this.chip.type === other.chip.type &&
+           this.chip.level === other.chip.level
   }
 
   updateDOM(dom: HTMLElement): boolean {
@@ -51,6 +54,7 @@ class StatusChipWidget extends WidgetType {
       // DOM要素のクラス名とテキストを更新
       const newClassName = `status-chip status-chip-${this.chip.type}`
       dom.className = newClassName
+      dom.style.setProperty('--level', this.chip.level.toString())
       dom.textContent = this.chip.text
       return true // 更新が成功したことを示す
     }
@@ -58,7 +62,7 @@ class StatusChipWidget extends WidgetType {
   }
 
   get estimatedHeight() {
-    return 20
+    return 24
   }
 }
 
@@ -78,13 +82,16 @@ const statusChipsField = StateField.define<StatusChip[]>({
       } else if (effect.is(removeStatusChipEffect)) {
         chips = chips.filter(chip => chip.identifier !== effect.value)
       } else if (effect.is(updateStatusChipEffect)) {
-        console.log('Updating status chip:', effect.value)
         chips = chips.map(chip => 
           chip.identifier === effect.value.id 
-            ? { ...chip, ...(effect.value.type ? {type: effect.value.type} : {}), ...(effect.value.text ? {text: effect.value.text} : {}) }
+            ? {
+              ...chip,
+              ...(effect.value.type ? { type: effect.value.type } : {}),
+              ...(effect.value.text ? { text: effect.value.text } : {}),
+              ...(effect.value.level !== null ? { level: effect.value.level } : {})
+            }
             : chip
         )
-        console.log('Updated chips:', chips)
       }
     }
     return chips
@@ -126,7 +133,7 @@ export interface CodeMirrorEditorHandle {
   scrollToBottom: () => void
   addStatusChip: (chip: StatusChip) => void
   removeStatusChip: (chipId: string) => void
-  updateStatusChip: (chipId: string, type: StatusChipType | null, text: string | null) => void
+  updateStatusChip: (chipId: string, type: StatusChipType | null, text: string | null, level: number | null) => void
 }
 
 interface CodeMirrorEditorProps {
@@ -197,10 +204,10 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
           })
         }
       },
-      updateStatusChip: (chipId: string, type: StatusChipType | null, text: string | null) => {
+      updateStatusChip: (chipId: string, type: StatusChipType | null, text: string | null, level: number | null) => {
         if (cmViewRef.current) {
           cmViewRef.current.dispatch({
-            effects: updateStatusChipEffect.of({ id: chipId, type, text })
+            effects: updateStatusChipEffect.of({ id: chipId, type, text, level })
           })
         }
       }

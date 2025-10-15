@@ -32,6 +32,8 @@ function App() {
   const chipsRelationRef = useRef<Map<string, string | null>>(new Map())
   // listeningチップのID
   const currentListeningChipRef = useRef<string | null>(null)
+  // 発話が完了した後に少し間をおいて新しいlisteningチップを追加するためのタイマーID
+  const listeningChipTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   // テキストを議事録に追加する関数
   const appendToTranscript = (text: string) => {
@@ -48,15 +50,15 @@ function App() {
     switch (event.type) {
       case 'startInitializing':
         setVadStatus('VAD初期化中...')
-        break
-        
-      case 'ready':
         setVadStatus('待機中')
         // すべての処理中チップを削除
-        chipsRelationRef.current.forEach((chipIdentifier, _) => {
+        chipsRelationRef.current.forEach((_, chipIdentifier) => {
           if (chipIdentifier !== null) editorRef.current?.removeStatusChip(chipIdentifier)
         })
         chipsRelationRef.current.clear()
+        break
+        
+      case 'ready':
         // listeningチップを追加
         {
           const newIdentifier = Date.now().toString()
@@ -64,6 +66,7 @@ function App() {
             identifier: newIdentifier,
             type: 'ready',
             text: '話すのを待っています…',
+            level: 0
           })
           chipsRelationRef.current.set(newIdentifier, null)
           currentListeningChipRef.current = newIdentifier
@@ -74,7 +77,19 @@ function App() {
         setVadStatus('聴いています...')
         // listeningチップの状態を変更
         if (currentListeningChipRef.current !== null) {
-          editorRef.current.updateStatusChip(currentListeningChipRef.current, 'listening', '聴いています…')
+          editorRef.current.updateStatusChip(currentListeningChipRef.current, 'listening', '聴いています…', null)
+        } else {
+          // listeningチップがなかったら追加
+          if (listeningChipTimerRef.current) clearTimeout(listeningChipTimerRef.current)
+          const newIdentifier = Date.now().toString()
+          editorRef.current.addStatusChip({
+            identifier: newIdentifier,
+            type: 'listening',
+            text: '聴いています…',
+            level: 0
+          })
+          chipsRelationRef.current.set(newIdentifier, null)
+          currentListeningChipRef.current = newIdentifier
         }
         break
         
@@ -82,7 +97,14 @@ function App() {
         setVadStatus('待機中')
         // listeningチップの状態を変更
         if (currentListeningChipRef.current !== null) {
-          editorRef.current.updateStatusChip(currentListeningChipRef.current, 'ready', '話すのを待っています…')
+          editorRef.current.updateStatusChip(currentListeningChipRef.current, 'ready', '話すのを待っています…', null)
+        }
+        break
+
+      case 'frameProcessed':
+        // 現在のlisteningチップのレベルを更新
+        if (currentListeningChipRef.current !== null) {
+          editorRef.current.updateStatusChip(currentListeningChipRef.current, null, null, event.probability)
         }
         break
 
@@ -91,19 +113,21 @@ function App() {
         // 現在の聴いているチップを処理中チップに変更
         if (currentListeningChipRef.current !== null) {
           chipsRelationRef.current.set(currentListeningChipRef.current, event.identifier)
-          editorRef.current.updateStatusChip(currentListeningChipRef.current, 'processing', '音声認識中...')
+          editorRef.current.updateStatusChip(currentListeningChipRef.current, 'processing', '…', null)
+          currentListeningChipRef.current = null
         }
-        // 新しいlisteningチップを追加
-        {
+        // 新しいlisteningチップを0.5秒後に追加
+        listeningChipTimerRef.current = setTimeout(() => {
           const newIdentifier = Date.now().toString()
-          editorRef.current.addStatusChip({
+          editorRef.current?.addStatusChip({
             identifier: newIdentifier,
             type: 'ready',
             text: '話すのを待っています…',
+            level: 0
           })
           chipsRelationRef.current.set(newIdentifier, null)
           currentListeningChipRef.current = newIdentifier
-        }
+        }, 500)
         break
         
       case 'processed':
@@ -133,7 +157,7 @@ function App() {
           const chipIdentifier = Array.from(chipsRelationRef.current.entries())
             .find(([_, vadId]) => vadId === vadIdentifier)?.[0]
           if (chipIdentifier) {
-            editorRef.current.updateStatusChip(chipIdentifier, 'error', 'エラーが発生しました')
+            editorRef.current.updateStatusChip(chipIdentifier, 'error', 'エラーが発生しました', null)
             // 2秒後に削除
             setTimeout(() => {
               if (editorRef.current) editorRef.current.removeStatusChip(chipIdentifier)
