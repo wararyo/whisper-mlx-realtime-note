@@ -243,11 +243,11 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
             
             try {
               const wavBuffer = window.vad.utils.encodeWAV(arr)
-              const file = new File([wavBuffer], `file${Date.now()}.wav`)
+              const file = new File([wavBuffer], `${identifier}.wav`)
               const formData = new FormData()
               formData.append("file", file)
-              
-              const responseText = await fetch(`${API_BASE_URL}/api/transcribe`, {
+
+              const responseText = await fetch(`${API_BASE_URL}/api/transcribe?identifier=${identifier}`, {
                 method: "POST",
                 body: formData,
               })
@@ -279,9 +279,7 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
                 }
               }
               
-              if (text) {
-                onEvent({ type: 'processed', identifier, transcript: text })
-              }
+              onEvent({ type: 'processed', identifier, transcript: text })
             } catch (err) {
               console.error(err)
               onEvent({ type: 'error', identifier, message: err instanceof Error ? err.message : 'Unknown error' })

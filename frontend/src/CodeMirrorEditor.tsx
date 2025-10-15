@@ -3,10 +3,10 @@ import * as Y from 'yjs'
 import { yCollab } from 'y-codemirror.next'
 import { EditorView, lineNumbers, Decoration, WidgetType } from '@codemirror/view'
 import { EditorState, StateField, StateEffect } from '@codemirror/state'
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
-import { syntaxHighlighting, HighlightStyle } from '@codemirror/language'
+import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { syntaxHighlighting, HighlightStyle, indentUnit } from '@codemirror/language'
 import { tags } from '@lezer/highlight'
-import { markdown } from '@codemirror/lang-markdown'
+import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { keymap } from '@codemirror/view'
 import { TranscribeProvider } from './TranscribeProvider'
 import './CodeMirror.css'
@@ -220,7 +220,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
         const lastLine = view.state.doc.lines
         const lastLineStart = view.state.doc.line(lastLine).from
         view.dispatch({
-          effects: EditorView.scrollIntoView(lastLineStart, { y: 'end' })
+          effects: EditorView.scrollIntoView(lastLineStart, { y: 'end', yMargin: 20 })
         })
       }
     }
@@ -281,11 +281,16 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
       // CodeMirror v6のエクステンションを設定
       const extensions = [
         history(),
-        keymap.of([...defaultKeymap, ...historyKeymap]),
+        keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+        indentUnit.of('    '), // インデントをスペース4つに設定
+        EditorState.tabSize.of(4),
         lineNumbers(),
         EditorView.lineWrapping,
         syntaxHighlighting(highlightStyle),
-        markdown(),
+        markdown({
+          base: markdownLanguage, // GFMを使用
+          completeHTMLTags: false,
+        }),
         yCollab(yText, provider.awareness),
         statusChipExtension,
         EditorView.updateListener.of((update) => {
