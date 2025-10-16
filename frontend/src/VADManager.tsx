@@ -31,8 +31,8 @@ declare global {
 
 // 音声ソース設定の型定義
 export interface AudioSourceSettings {
-  micEnabled: boolean
-  tabAudioEnabled: boolean
+  mic: boolean | { noiseSuppression: boolean; echoCancellation: boolean }
+  tabAudio: boolean
 }
 
 export type VADEvent = 
@@ -120,20 +120,19 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
 
     try {
       // マイク音声取得
-      if (audioSettings.micEnabled) {
-        micStream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            channelCount: 1,
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          }
-        })
+      if (audioSettings.mic) {
+        const micSettings = {
+          channelCount: 1,
+          echoCancellation: typeof audioSettings.mic === 'object' ? audioSettings.mic.echoCancellation : true,
+          noiseSuppression: typeof audioSettings.mic === 'object' ? audioSettings.mic.noiseSuppression : true,
+          autoGainControl: true
+        }
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: micSettings })
         micStreamRef.current = micStream
       }
 
       // タブ音声取得
-      if (audioSettings.tabAudioEnabled) {
+      if (audioSettings.tabAudio) {
         tabStream = await getTabAudioStream()
         tabStreamRef.current = tabStream
       }
@@ -216,7 +215,7 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
           getStream: async () => {
             try {
               // 音声設定に基づいてストリームを取得
-              if (!audioSettings.micEnabled && !audioSettings.tabAudioEnabled) {
+              if (!audioSettings.mic && !audioSettings.tabAudio) {
                 throw new Error('音声ソースが選択されていません')
               }
               return await setupAudioStreams()

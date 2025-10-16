@@ -15,8 +15,11 @@ function App() {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>({ hasSaved: false })
   const [micPermission, setMicPermission] = useState<string>('checking')
   const [audioSettings, setAudioSettings] = useState<AudioSourceSettings>({
-    micEnabled: true,
-    tabAudioEnabled: false
+    mic: {
+      noiseSuppression: true,
+      echoCancellation: true
+    },
+    tabAudio: false
   })
   const [isAudioSettingsOpen, setIsAudioSettingsOpen] = useState<boolean>(false)
   
@@ -259,10 +262,29 @@ function App() {
   }
 
   // 音声ソース設定のハンドル関数
-  const handleAudioSettingsChange = (setting: keyof AudioSourceSettings, enabled: boolean) => {
+  const handleMicEnabledChange = (enabled: boolean) => {
     setAudioSettings(prev => ({
       ...prev,
-      [setting]: enabled
+      mic: enabled ? {
+        noiseSuppression: true,
+        echoCancellation: true
+      } : false
+    }))
+  }
+
+  const handleTabAudioEnabledChange = (enabled: boolean) => {
+    setAudioSettings(prev => ({
+      ...prev,
+      tabAudio: enabled
+    }))
+  }
+
+  const handleMicSettingsChange = (setting: 'noiseSuppression' | 'echoCancellation', enabled: boolean) => {
+    setAudioSettings(prev => ({
+      ...prev,
+      mic: typeof prev.mic === 'object'
+        ? { ...prev.mic, [setting]: enabled }
+        : { noiseSuppression: true, echoCancellation: true, [setting]: enabled }
     }))
   }
 
@@ -302,24 +324,44 @@ function App() {
           <div className="settings-content">
             <h3>音声ソース</h3>
             <div className="settings-audio-sources">
-              <label className="audio-source-option">
+              <label className="audio-source-item">
                 <input
                   type="checkbox"
-                  checked={audioSettings.micEnabled}
-                  onChange={(e) => handleAudioSettingsChange('micEnabled', e.target.checked)}
+                  checked={Boolean(audioSettings.mic)}
+                  onChange={(e) => handleMicEnabledChange(e.target.checked)}
                 />
                 <span>マイク</span>
+                {audioSettings.mic && typeof audioSettings.mic === 'object' && (
+                  <div className="audio-source-item-settings">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={audioSettings.mic.noiseSuppression}
+                        onChange={(e) => handleMicSettingsChange('noiseSuppression', e.target.checked)}
+                      />
+                      <span>ノイズ抑制</span>
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={audioSettings.mic.echoCancellation}
+                        onChange={(e) => handleMicSettingsChange('echoCancellation', e.target.checked)}
+                      />
+                      <span>エコー抑制</span>
+                    </label>
+                  </div>
+                )}
               </label>
-              <label className="audio-source-option">
+              <label className="audio-source-item">
                 <input
                   type="checkbox"
-                  checked={audioSettings.tabAudioEnabled}
-                  onChange={(e) => handleAudioSettingsChange('tabAudioEnabled', e.target.checked)}
+                  checked={audioSettings.tabAudio}
+                  onChange={(e) => handleTabAudioEnabledChange(e.target.checked)}
                 />
-                <span>タブの音声（画面共有）</span>
+                <span>タブの音声</span>
               </label>
             </div>
-            {!audioSettings.micEnabled && !audioSettings.tabAudioEnabled && (
+            {!audioSettings.mic && !audioSettings.tabAudio && (
               <div className="warning">
                 ⚠️ 少なくとも1つの音声ソースを選択してください
               </div>
