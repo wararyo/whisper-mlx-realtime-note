@@ -31,8 +31,8 @@ declare global {
 
 // 音声ソース設定の型定義
 export interface AudioSourceSettings {
-  mic: boolean | { noiseSuppression: boolean; echoCancellation: boolean }
-  tabAudio: boolean
+  mic: { enabled: boolean, noiseSuppression: boolean; echoCancellation: boolean }
+  tabAudio: { enabled: boolean }
 }
 
 export type VADEvent = 
@@ -94,8 +94,8 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
   const getMicAudioStream = useCallback(async (): Promise<MediaStream> => {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: {
       channelCount: 1,
-      echoCancellation: typeof audioSettings.mic === 'object' ? audioSettings.mic.echoCancellation : true,
-      noiseSuppression: typeof audioSettings.mic === 'object' ? audioSettings.mic.noiseSuppression : true,
+      echoCancellation: audioSettings.mic.echoCancellation,
+      noiseSuppression: audioSettings.mic.noiseSuppression,
       autoGainControl: true
     } })
     return stream
@@ -165,8 +165,8 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
       let tabSource: MediaStreamAudioSourceNode | null = null
       try {
         console.log('Updating audio streams...', audioSettings)
-        if (audioSettings.mic) micStream = await getMicAudioStream()
-        if (audioSettings.tabAudio) tabStream = await getTabAudioStream()
+        if (audioSettings.mic.enabled) micStream = await getMicAudioStream()
+        if (audioSettings.tabAudio.enabled) tabStream = await getTabAudioStream()
 
         if (micStream) {
           micSource = audioContextRef.current.createMediaStreamSource(micStream)

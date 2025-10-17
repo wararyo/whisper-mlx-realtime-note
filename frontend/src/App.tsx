@@ -16,10 +16,11 @@ function App() {
   const [micPermission, setMicPermission] = useState<string>('checking')
   const [audioSettings, setAudioSettings] = useState<AudioSourceSettings>({
     mic: {
+      enabled: true,
       noiseSuppression: true,
       echoCancellation: true
     },
-    tabAudio: false
+    tabAudio: { enabled: false }
   })
   const [isAudioSettingsOpen, setIsAudioSettingsOpen] = useState<boolean>(false)
   
@@ -265,26 +266,30 @@ function App() {
   const handleMicEnabledChange = (enabled: boolean) => {
     setAudioSettings(prev => ({
       ...prev,
-      mic: enabled ? {
-        noiseSuppression: true,
-        echoCancellation: true
-      } : false
+      mic: {
+        ...prev.mic,
+        enabled
+      }
     }))
   }
 
   const handleTabAudioEnabledChange = (enabled: boolean) => {
     setAudioSettings(prev => ({
       ...prev,
-      tabAudio: enabled
+      tabAudio: {
+        ...prev.tabAudio,
+        enabled
+      }
     }))
   }
 
   const handleMicSettingsChange = (setting: 'noiseSuppression' | 'echoCancellation', enabled: boolean) => {
     setAudioSettings(prev => ({
       ...prev,
-      mic: typeof prev.mic === 'object'
-        ? { ...prev.mic, [setting]: enabled }
-        : { noiseSuppression: true, echoCancellation: true, [setting]: enabled }
+      mic: {
+        ...prev.mic,
+        [setting]: enabled
+      }
     }))
   }
 
@@ -327,11 +332,11 @@ function App() {
               <label className="audio-source-item">
                 <input
                   type="checkbox"
-                  checked={Boolean(audioSettings.mic)}
+                  checked={audioSettings.mic.enabled}
                   onChange={(e) => handleMicEnabledChange(e.target.checked)}
                 />
                 <span>マイク</span>
-                {audioSettings.mic && typeof audioSettings.mic === 'object' && (
+                {audioSettings.mic.enabled && (
                   <div className="audio-source-item-settings">
                     <label>
                       <input
@@ -355,13 +360,13 @@ function App() {
               <label className="audio-source-item">
                 <input
                   type="checkbox"
-                  checked={audioSettings.tabAudio}
+                  checked={audioSettings.tabAudio.enabled}
                   onChange={(e) => handleTabAudioEnabledChange(e.target.checked)}
                 />
                 <span>タブの音声</span>
               </label>
             </div>
-            {!audioSettings.mic && !audioSettings.tabAudio && (
+            {!audioSettings.mic.enabled && !audioSettings.tabAudio.enabled && (
               <div className="warning">
                 ⚠️ 少なくとも1つの音声ソースを選択してください
               </div>
