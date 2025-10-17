@@ -121,20 +121,6 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
     return stream
   }, [])
 
-  // 音声ストリームをクリーンアップ
-  const cleanupAudioStreams = useCallback(() => {
-    console.log('Cleaning up audio streams...')
-    micStreamRef.current?.getTracks().forEach(track => track.stop())
-    tabStreamRef.current?.getTracks().forEach(track => track.stop())
-    micSourceRef.current?.disconnect()
-    tabSourceRef.current?.disconnect()
-
-    micSourceRef.current = null
-    tabSourceRef.current = null
-    micStreamRef.current = null
-    tabStreamRef.current = null
-  }, [])
-
   // audioContextは一度作成したら基本的に閉じない
   useEffect(() => {
     audioContextRef.current = new AudioContext()
@@ -152,60 +138,105 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
     }
   }, [])
   
-  // 音声ストリームの作成および更新
+  // マイク音声ストリームの作成および更新
   useEffect(() => {
     let isMounted = true;
     (async () => {
       // AudioContextとMediaStreamDestinationがまだ作成されていなければ何もしない
       if (!audioContextRef.current) return;
       if (!destinationRef.current) return;
-      let micStream: MediaStream | null = null
-      let tabStream: MediaStream | null = null
-      let micSource: MediaStreamAudioSourceNode | null = null
-      let tabSource: MediaStreamAudioSourceNode | null = null
-      try {
-        console.log('Updating audio streams...', audioSettings)
-        if (audioSettings.mic.enabled) micStream = await getMicAudioStream()
-        if (audioSettings.tabAudio.enabled) tabStream = await getTabAudioStream()
 
-        if (micStream) {
+      // 既存のマイクストリームをクリーンアップ
+      micStreamRef.current?.getTracks().forEach(track => track.stop())
+      micSourceRef.current?.disconnect()
+      micStreamRef.current = null
+      micSourceRef.current = null
+
+      let micStream: MediaStream | null = null
+      let micSource: MediaStreamAudioSourceNode | null = null
+      try {
+        if (audioSettings.mic.enabled) {
+          console.log('Updating mic stream...', audioSettings.mic)
+          micStream = await getMicAudioStream()
           micSource = audioContextRef.current.createMediaStreamSource(micStream)
           micSource.connect(destinationRef.current)
         }
-        if (tabStream) {
-          tabSource = audioContextRef.current.createMediaStreamSource(tabStream)
-          tabSource.connect(destinationRef.current)
-        }
 
         // 非同期処理中にアンマウントされることがあるため、ここで初めてRefにセットする
-        // もしアンマウントされていたら取得したストリームはクリーンアップする
         if (isMounted) {
           micStreamRef.current = micStream
-          tabStreamRef.current = tabStream
           micSourceRef.current = micSource
-          tabSourceRef.current = tabSource
         } else {
           micStream?.getTracks().forEach(track => track.stop())
-          tabStream?.getTracks().forEach(track => track.stop())
           micSource?.disconnect()
-          tabSource?.disconnect()
           return
         }
-
-        combinedStreamRef.current = destinationRef.current.stream
-        console.log('Audio streams updated')
+        console.log('Mic stream updated')
       } catch (error) {
         micStream?.getTracks().forEach(track => track.stop())
-        tabStream?.getTracks().forEach(track => track.stop())
-        console.error('Audio stream update failed:', error)
+        micSource?.disconnect()
+        console.error('Mic stream update failed:', error)
         throw error
       }
     })();
     return () => {
       isMounted = false;
-      cleanupAudioStreams()
+      micStreamRef.current?.getTracks().forEach(track => track.stop())
+      micSourceRef.current?.disconnect()
+      micStreamRef.current = null
+      micSourceRef.current = null
     }
-  }, [audioSettings])
+  }, [audioSettings.mic, getMicAudioStream])
+
+  // タブ音声ストリームの作成および更新
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      // AudioContextとMediaStreamDestinationがまだ作成されていなければ何もしない
+      if (!audioContextRef.current) return;
+      if (!destinationRef.current) return;
+
+      // 既存のタブストリームをクリーンアップ
+      tabStreamRef.current?.getTracks().forEach(track => track.stop())
+      tabSourceRef.current?.disconnect()
+      tabStreamRef.current = null
+      tabSourceRef.current = null
+
+      let tabStream: MediaStream | null = null
+      let tabSource: MediaStreamAudioSourceNode | null = null
+      try {
+        if (audioSettings.tabAudio.enabled) {
+          console.log('Updating tab stream...', audioSettings.tabAudio)
+          tabStream = await getTabAudioStream()
+          tabSource = audioContextRef.current.createMediaStreamSource(tabStream)
+          tabSource.connect(destinationRef.current)
+        }
+
+        // 非同期処理中にアンマウントされることがあるため、ここで初めてRefにセットする
+        if (isMounted) {
+          tabStreamRef.current = tabStream
+          tabSourceRef.current = tabSource
+        } else {
+          tabStream?.getTracks().forEach(track => track.stop())
+          tabSource?.disconnect()
+          return
+        }
+        console.log('Tab stream updated')
+      } catch (error) {
+        tabStream?.getTracks().forEach(track => track.stop())
+        tabSource?.disconnect()
+        console.error('Tab stream update failed:', error)
+        throw error
+      }
+    })();
+    return () => {
+      isMounted = false;
+      tabStreamRef.current?.getTracks().forEach(track => track.stop())
+      tabSourceRef.current?.disconnect()
+      tabStreamRef.current = null
+      tabSourceRef.current = null
+    }
+  }, [audioSettings.tabAudio, getTabAudioStream])
 
   // VADの初期化
   useEffect(() => {
