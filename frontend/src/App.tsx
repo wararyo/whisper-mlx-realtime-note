@@ -11,7 +11,6 @@ type SaveStatus =
   | { hasSaved: true; lastSavedAt: Date; lastSaveType: 'auto' | 'manual' }
 
 function App() {
-  const [transcript, setTranscript] = useState<string>('')
   const [saveStatus, setSaveStatus] = useState<SaveStatus>({ hasSaved: false })
   const [micPermission, setMicPermission] = useState<string>('checking')
   const [audioSettings, setAudioSettings] = useState<AudioSourceSettings>({
@@ -40,7 +39,7 @@ function App() {
 
   // 前回の保存からAUTO_SAVE_INTERVAL以上経過していたら自動保存を行う
   const handleAutoSave = useCallback(() => {
-    const currentText = editorRef.current?.getText() || transcript
+    const currentText = editorRef.current?.getText()
     const now = new Date()
     setSaveStatus(status => {
       if (currentText && (!status.hasSaved || (now.getTime() - status.lastSavedAt.getTime() > AUTO_SAVE_INTERVAL))) {
@@ -53,13 +52,12 @@ function App() {
       }
       return status
     })
-  }, [transcript])
+  }, [])
 
   // テキストを議事録に追加する
   const appendToTranscript = useCallback((text: string) => {
     if (editorRef.current) {
       editorRef.current.appendText(text)
-      setTranscript(editorRef.current.getText())
 
       // 自動保存を試みる
       handleAutoSave()
@@ -182,7 +180,7 @@ function App() {
         }
         break
     }
-  }, [appendToTranscript, handleAutoSave, transcript])
+  }, [appendToTranscript])
 
   // マイクロフォン権限の確認
   useEffect(() => {
@@ -205,7 +203,6 @@ function App() {
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY)
     if (saved) {
-      setTranscript(saved)
       // エディタが準備できてから復元
       setTimeout(() => {
         if (editorRef.current) {
@@ -222,14 +219,14 @@ function App() {
       if (editorRef.current) {
         editorRef.current.clearText()
       }
-      setTranscript('')
       localStorage.removeItem(STORAGE_KEY)
       setSaveStatus({ hasSaved: false })
     }
   }
 
   const handleManualSave = (): void => {
-    const currentText = editorRef.current?.getText() || transcript
+    if (!editorRef.current) throw new Error('Editor is not ready')
+    const currentText = editorRef.current?.getText()
     localStorage.setItem(STORAGE_KEY, currentText)
     setSaveStatus({ 
       hasSaved: true, 
@@ -239,7 +236,8 @@ function App() {
   }
 
   const handleDownload = (): void => {
-    const currentText = editorRef.current?.getText() || transcript
+    if (!editorRef.current) throw new Error('Editor is not ready')
+    const currentText = editorRef.current?.getText()
     if (!currentText) {
       alert('ダウンロードするテキストがありません')
       return
@@ -383,8 +381,6 @@ function App() {
       
       <CodeMirrorEditor
         ref={editorRef}
-        initialValue={transcript}
-        onChange={setTranscript}
         onSaveRequested={handleManualSave}
         placeholder="ここに議事録が自動的に追記されます。手動での編集も可能です。"
       />
