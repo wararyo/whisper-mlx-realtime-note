@@ -75,17 +75,16 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
   // 外部からアクセス可能な関数を公開
   useImperativeHandle(ref, () => ({
     restartVAD: () => {
-      if (vadRef.current) {
-        try {
-          console.log('Restarting VAD...')
-          vadRef.current.pause()
-          setTimeout(() => {
-            vadRef.current?.start()
-            console.log('VAD restarted')
-          }, 500)
-        } catch (error) {
-          console.error('Failed to restart VAD:', error)
+      try {
+        if (vadRef.current) {
+          vadRef.current.destroy()
+          vadRef.current = null
         }
+        if (micPermission === 'granted') {
+          setTimeout(initVAD, 100)
+        }
+      } catch (error) {
+        console.error('Failed to restart VAD:', error)
       }
     }
   }), [])
@@ -238,121 +237,125 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
     }
   }, [audioSettings.tabAudio, getTabAudioStream])
 
-  // VADの初期化
-  useEffect(() => {
-    const initVAD = async () => {
-      try {
-        // CDNのロードを待機
-        let attempts = 0
-        while (!window.vad && attempts < 50) {
-          await new Promise(resolve => setTimeout(resolve, 100))
-          attempts++
-        }
+  const initVAD = async () => {
+    try {
+      // CDNのロードを待機
+      let attempts = 0
+      while (!window.vad && attempts < 50) {
+        await new Promise(resolve => setTimeout(resolve, 100))
+        attempts++
+      }
 
-        if (!window.vad) {
-          throw new Error('VAD CDN failed to load')
-        }
+      if (!window.vad) {
+        throw new Error('VAD CDN failed to load')
+      }
 
-        if (!combinedStreamRef.current) {
-          throw new Error('No audio stream available for VAD')
-        }
+      if (!combinedStreamRef.current) {
+        throw new Error('No audio stream available for VAD')
+      }
 
-        console.log('Initializing VAD...')
-        onEvent({ type: 'startInitializing' })
+      console.log('Initializing VAD...')
+      onEvent({ type: 'startInitializing' })
 
-        const myvad = await window.vad.MicVAD.new({
-          positiveSpeechThreshold: 0.4,
-          negativeSpeechThreshold: 0.2,
-          minSpeechMs: 200,
-          preSpeechPadMs: 500,
-          redemptionMs: 500,
-          submitUserSpeechOnPause: true,
-          model: 'v5',
-          onnxWASMBasePath: ONNX_WASM_PATH,
-          baseAssetPath: ASSET_PATH,
-          getStream: () => {
-            audioContextRef.current?.resume()
-            return combinedStreamRef.current
-          },
-          pauseStream: () => {
-            audioContextRef.current?.suspend()
-          },
-          resumeStream: () => {
-            audioContextRef.current?.resume()
-            return combinedStreamRef.current
-          },
-          onSpeechStart: () => {
-            console.log("Speech started")
-            onEvent({ type: 'startListening' })
-          },
-          onFrameProcessed: (probabilities: { isSpeech: number; notSpeech: number }, _: Float32Array) => {
-            onEvent({ type: 'frameProcessed', probability: probabilities.isSpeech })
-          },
-          onVADMisfire: () => {
-            console.log("VAD misfire")
-            onEvent({ type: 'misfire' })
-          },
-          onSpeechEnd: async (arr: Float32Array) => {
-            console.log("Speech ended")
-            const identifier = Date.now().toString()
-            onEvent({ type: 'startProcessing', identifier })
-            
-            try {
-              const wavBuffer = window.vad.utils.encodeWAV(arr)
-              const file = new File([wavBuffer], `${identifier}.wav`)
-              const formData = new FormData()
-              formData.append("file", file)
+      const myvad = await window.vad.MicVAD.new({
+        positiveSpeechThreshold: 0.4,
+        negativeSpeechThreshold: 0.2,
+        minSpeechMs: 200,
+        preSpeechPadMs: 500,
+        redemptionMs: 500,
+        submitUserSpeechOnPause: true,
+        model: 'v5',
+        onnxWASMBasePath: ONNX_WASM_PATH,
+        baseAssetPath: ASSET_PATH,
+        getStream: () => {
+          audioContextRef.current?.resume()
+          return combinedStreamRef.current
+        },
+        pauseStream: () => {
+          audioContextRef.current?.suspend()
+        },
+        resumeStream: () => {
+          audioContextRef.current?.resume()
+          return combinedStreamRef.current
+        },
+        onSpeechStart: () => {
+          console.log("Speech started")
+          onEvent({ type: 'startListening' })
+        },
+        onFrameProcessed: (probabilities: { isSpeech: number; notSpeech: number }, _: Float32Array) => {
+          onEvent({ type: 'frameProcessed', probability: probabilities.isSpeech })
+        },
+        onVADMisfire: () => {
+          console.log("VAD misfire")
+          onEvent({ type: 'misfire' })
+        },
+        onSpeechEnd: async (arr: Float32Array) => {
+          console.log("Speech ended")
+          const identifier = Date.now().toString()
+          onEvent({ type: 'startProcessing', identifier })
 
-              const responseText = await fetch(`${API_BASE_URL}/api/transcribe?identifier=${identifier}`, {
-                method: "POST",
-                body: formData,
-              })
-              const response = await responseText.json()
-              console.log(response.text)
+          try {
+            const wavBuffer = window.vad.utils.encodeWAV(arr)
+            const file = new File([wavBuffer], `${identifier}.wav`)
+            const formData = new FormData()
+            formData.append("file", file)
 
-              let text = ""
+            const responseText = await fetch(`${API_BASE_URL}/api/transcribe?identifier=${identifier}`, {
+              method: "POST",
+              body: formData,
+            })
+            const response = await responseText.json()
+            console.log(response.text)
 
-              if (response.segments && Array.isArray(response.segments)) {
-                for (const segment of response.segments) {
-                  let segmentText = segment.text.trim()
-                  segmentText = segmentText?.replace(/ご視聴ありがとうございました。?/g, "") // 無音に近い音を渡すとよくこれに誤認識される
-                  if (!segmentText) continue
-                  if (segmentText.length > 20) segmentText += "\n" // 長い文は改行を追加
-                  else segmentText += " " // 短い文はスペースを追加
-                  if (withTimestamp) {
-                    const startTime = new Date(segment.start * 1000).toISOString().substr(11, 8)
-                    text += `[${startTime}] ${segmentText}`
-                  } else {
-                    text += segmentText
-                  }
-                }
-              } else if (response.text && response.text.trim) {
+            let text = ""
+
+            if (response.segments && Array.isArray(response.segments)) {
+              for (const segment of response.segments) {
+                let segmentText = segment.text.trim()
+                segmentText = segmentText?.replace(/ご視聴ありがとうございました。?/g, "") // 無音に近い音を渡すとよくこれに誤認識される
+                if (!segmentText) continue
+                if (segmentText.length > 20) segmentText += "\n" // 長い文は改行を追加
+                else segmentText += " " // 短い文はスペースを追加
                 if (withTimestamp) {
-                  const timestamp = new Date().toISOString().substr(11, 8)
-                  text = `[${timestamp}] ${response.text.trim()}`
+                  const startTime = new Date(segment.start * 1000).toISOString().substr(11, 8)
+                  text += `[${startTime}] ${segmentText}`
                 } else {
-                  text = response.text.trim()
+                  text += segmentText
                 }
               }
-              
-              onEvent({ type: 'processed', identifier, transcript: text })
-            } catch (err) {
-              console.error(err)
-              onEvent({ type: 'error', identifier, message: err instanceof Error ? err.message : 'Unknown error' })
+            } else if (response.text && response.text.trim) {
+              if (withTimestamp) {
+                const timestamp = new Date().toISOString().substr(11, 8)
+                text = `[${timestamp}] ${response.text.trim()}`
+              } else {
+                text = response.text.trim()
+              }
             }
-          }
-        })
-        
-        vadRef.current = myvad
-        myvad.start()
-        console.log("音声認識を開始しました")
-        onEvent({ type: 'ready' })
-      } catch (e) {
-        console.error("音声認識の初期化に失敗:", e)
-        onEvent({ type: 'error', identifier: null, message: e instanceof Error ? e.message : 'Unknown error' })
-      }
-    }
 
+            onEvent({ type: 'processed', identifier, transcript: text })
+          } catch (err) {
+            console.error(err)
+            onEvent({ type: 'error', identifier, message: err instanceof Error ? err.message : 'Unknown error' })
+          }
+        }
+      })
+
+      vadRef.current = myvad
+      myvad.start()
+      console.log("音声認識を開始しました")
+      onEvent({ type: 'ready' })
+    } catch (e) {
+      console.error("音声認識の初期化に失敗:", e)
+      onEvent({ type: 'error', identifier: null, message: e instanceof Error ? e.message : 'Unknown error' })
+    }
+  }
+
+  // VADの初期化
+  useEffect(() => {
+    if (vadRef.current) {
+      vadRef.current.destroy()
+      vadRef.current = null
+    }
     if (micPermission === 'granted') {
       initVAD()
     }
