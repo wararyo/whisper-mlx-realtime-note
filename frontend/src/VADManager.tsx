@@ -67,7 +67,39 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
   const audioContextRef = useRef<AudioContext | null>(null)
   const micStreamRef = useRef<MediaStream | null>(null)
   const tabStreamRef = useRef<MediaStream | null>(null)
+  const micSourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
+  const tabSourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
+  const destinationRef = useRef<MediaStreamAudioDestinationNode | null>(null)
   const combinedStreamRef = useRef<MediaStream | null>(null)
+
+  // 外部からアクセス可能な関数を公開
+  useImperativeHandle(ref, () => ({
+    restartVAD: () => {
+      if (vadRef.current) {
+        try {
+          console.log('Restarting VAD...')
+          vadRef.current.pause()
+          setTimeout(() => {
+            vadRef.current?.start()
+            console.log('VAD restarted')
+          }, 500)
+        } catch (error) {
+          console.error('Failed to restart VAD:', error)
+        }
+      }
+    }
+  }), [])
+
+  // マイクの音声ストリームを取得
+  const getMicAudioStream = useCallback(async (): Promise<MediaStream> => {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: {
+      channelCount: 1,
+      echoCancellation: typeof audioSettings.mic === 'object' ? audioSettings.mic.echoCancellation : true,
+      noiseSuppression: typeof audioSettings.mic === 'object' ? audioSettings.mic.noiseSuppression : true,
+      autoGainControl: true
+    } })
+    return stream
+  }, [audioSettings.mic])
 
   // タブの音声ストリームを取得
   const getTabAudioStream = useCallback(async (): Promise<MediaStream> => {
@@ -89,100 +121,91 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
     return stream
   }, [])
 
-  // 音声ストリームを結合
-  const combineAudioStreams = useCallback(async (micStream: MediaStream | null, tabStream: MediaStream | null): Promise<MediaStream> => {
-    // 既存のAudioContextをクリーンアップ
-    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-      await audioContextRef.current.close()
-    }
-
-    audioContextRef.current = new AudioContext()
-    const destination = audioContextRef.current.createMediaStreamDestination()
-
-    // 各音声ソースを作成して接続
-    if (micStream) {
-      const micSource = audioContextRef.current.createMediaStreamSource(micStream)
-      micSource.connect(destination)
-    }
-
-    if (tabStream) {
-      const tabSource = audioContextRef.current.createMediaStreamSource(tabStream)
-      tabSource.connect(destination)
-    }
-
-    return destination.stream
-  }, [])
-
-  // 音声ストリームをセットアップ
-  const setupAudioStreams = useCallback(async (): Promise<MediaStream> => {
-    let micStream: MediaStream | null = null
-    let tabStream: MediaStream | null = null
-
-    try {
-      // マイク音声取得
-      if (audioSettings.mic) {
-        const micSettings = {
-          channelCount: 1,
-          echoCancellation: typeof audioSettings.mic === 'object' ? audioSettings.mic.echoCancellation : true,
-          noiseSuppression: typeof audioSettings.mic === 'object' ? audioSettings.mic.noiseSuppression : true,
-          autoGainControl: true
-        }
-        micStream = await navigator.mediaDevices.getUserMedia({ audio: micSettings })
-        micStreamRef.current = micStream
-      }
-
-      // タブ音声取得
-      if (audioSettings.tabAudio) {
-        tabStream = await getTabAudioStream()
-        tabStreamRef.current = tabStream
-      }
-
-      // 音声ストリームを結合
-      const combinedStream = await combineAudioStreams(micStream, tabStream)
-      combinedStreamRef.current = combinedStream
-
-      return combinedStream
-    } catch (error) {
-      // エラー時はストリームをクリーンアップ
-      micStream?.getTracks().forEach(track => track.stop())
-      tabStream?.getTracks().forEach(track => track.stop())
-      throw error
-    }
-  }, [audioSettings, getTabAudioStream, combineAudioStreams])
-
   // 音声ストリームをクリーンアップ
   const cleanupAudioStreams = useCallback(() => {
+    console.log('Cleaning up audio streams...')
     micStreamRef.current?.getTracks().forEach(track => track.stop())
     tabStreamRef.current?.getTracks().forEach(track => track.stop())
-    combinedStreamRef.current?.getTracks().forEach(track => track.stop())
-    
-    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-      audioContextRef.current.close()
-    }
+    micSourceRef.current?.disconnect()
+    tabSourceRef.current?.disconnect()
 
+    micSourceRef.current = null
+    tabSourceRef.current = null
     micStreamRef.current = null
     tabStreamRef.current = null
-    combinedStreamRef.current = null
-    audioContextRef.current = null
   }, [])
 
-  // 外部からアクセス可能な関数を公開
-  useImperativeHandle(ref, () => ({
-    restartVAD: () => {
-      if (vadRef.current) {
-        try {
-          console.log('Restarting VAD...')
-          vadRef.current.pause()
-          setTimeout(() => {
-            vadRef.current?.start()
-            console.log('VAD restarted')
-          }, 500)
-        } catch (error) {
-          console.error('Failed to restart VAD:', error)
-        }
+  // audioContextは一度作成したら基本的に閉じない
+  useEffect(() => {
+    audioContextRef.current = new AudioContext()
+    destinationRef.current = audioContextRef.current.createMediaStreamDestination()
+    combinedStreamRef.current = destinationRef.current.stream
+    return () => {
+      combinedStreamRef.current?.getTracks().forEach(track => track.stop())
+      destinationRef.current?.disconnect()
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        audioContextRef.current.close()
       }
+      audioContextRef.current = null
+      destinationRef.current = null
+      combinedStreamRef.current = null
     }
-  }), [])
+  }, [])
+  
+  // 音声ストリームの作成および更新
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      // AudioContextとMediaStreamDestinationがまだ作成されていなければ何もしない
+      if (!audioContextRef.current) return;
+      if (!destinationRef.current) return;
+      let micStream: MediaStream | null = null
+      let tabStream: MediaStream | null = null
+      let micSource: MediaStreamAudioSourceNode | null = null
+      let tabSource: MediaStreamAudioSourceNode | null = null
+      try {
+        console.log('Updating audio streams...', audioSettings)
+        if (audioSettings.mic) micStream = await getMicAudioStream()
+        if (audioSettings.tabAudio) tabStream = await getTabAudioStream()
+
+        if (micStream) {
+          micSource = audioContextRef.current.createMediaStreamSource(micStream)
+          micSource.connect(destinationRef.current)
+        }
+        if (tabStream) {
+          tabSource = audioContextRef.current.createMediaStreamSource(tabStream)
+          tabSource.connect(destinationRef.current)
+        }
+
+        // 非同期処理中にアンマウントされることがあるため、ここで初めてRefにセットする
+        // もしアンマウントされていたら取得したストリームはクリーンアップする
+        if (isMounted) {
+          micStreamRef.current = micStream
+          tabStreamRef.current = tabStream
+          micSourceRef.current = micSource
+          tabSourceRef.current = tabSource
+        } else {
+          micStream?.getTracks().forEach(track => track.stop())
+          tabStream?.getTracks().forEach(track => track.stop())
+          micSource?.disconnect()
+          tabSource?.disconnect()
+          return
+        }
+
+        combinedStreamRef.current = destinationRef.current.stream
+        console.log('Audio streams updated')
+      } catch (error) {
+        micStream?.getTracks().forEach(track => track.stop())
+        tabStream?.getTracks().forEach(track => track.stop())
+        console.error('Audio stream update failed:', error)
+        throw error
+      }
+    })();
+    return () => {
+      isMounted = false;
+      cleanupAudioStreams()
+    }
+  }, [audioSettings])
 
   // VADの初期化
   useEffect(() => {
@@ -199,6 +222,10 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
           throw new Error('VAD CDN failed to load')
         }
 
+        if (!combinedStreamRef.current) {
+          throw new Error('No audio stream available for VAD')
+        }
+
         console.log('Initializing VAD...')
         onEvent({ type: 'startInitializing' })
 
@@ -212,17 +239,16 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
           model: 'v5',
           onnxWASMBasePath: ONNX_WASM_PATH,
           baseAssetPath: ASSET_PATH,
-          getStream: async () => {
-            try {
-              // 音声設定に基づいてストリームを取得
-              if (!audioSettings.mic && !audioSettings.tabAudio) {
-                throw new Error('音声ソースが選択されていません')
-              }
-              return await setupAudioStreams()
-            } catch (error) {
-              console.error('Audio stream setup failed:', error)
-              throw error
-            }
+          getStream: () => {
+            audioContextRef.current?.resume()
+            return combinedStreamRef.current
+          },
+          pauseStream: () => {
+            audioContextRef.current?.suspend()
+          },
+          resumeStream: () => {
+            audioContextRef.current?.resume()
+            return combinedStreamRef.current
           },
           onSpeechStart: () => {
             console.log("Speech started")
@@ -293,7 +319,6 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
       } catch (e) {
         console.error("音声認識の初期化に失敗:", e)
         onEvent({ type: 'error', identifier: null, message: e instanceof Error ? e.message : 'Unknown error' })
-        cleanupAudioStreams()
       }
     }
 
@@ -304,12 +329,11 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
     // クリーンアップ関数
     return () => {
       if (vadRef.current) {
-        vadRef.current.pause()
+        vadRef.current.destroy()
         vadRef.current = null
       }
-      cleanupAudioStreams()
     }
-  }, [micPermission, audioSettings])
+  }, [micPermission, onEvent, withTimestamp])
 
   return null // このコンポーネントはUIを持たない
 })

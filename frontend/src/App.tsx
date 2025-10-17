@@ -55,7 +55,7 @@ function App() {
   }, [transcript])
 
   // テキストを議事録に追加する
-  const appendToTranscript = (text: string) => {
+  const appendToTranscript = useCallback((text: string) => {
     if (editorRef.current) {
       editorRef.current.appendText(text)
       setTranscript(editorRef.current.getText())
@@ -63,10 +63,10 @@ function App() {
       // 自動保存を試みる
       handleAutoSave()
     }
-  }
+  }, [handleAutoSave])
 
   // VADのイベントを処理する
-  const handleVadEvent = (event: VADEvent) => {
+  const handleVadEvent = useCallback((event: VADEvent) => {
     if (!editorRef.current) return
 
     switch (event.type) {
@@ -181,7 +181,7 @@ function App() {
         }
         break
     }
-  }
+  }, [appendToTranscript, handleAutoSave, transcript])
 
   // マイクロフォン権限の確認
   useEffect(() => {
@@ -189,8 +189,8 @@ function App() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
         console.log('Microphone access granted')
-        setMicPermission('granted')
         stream.getTracks().forEach(track => track.stop()) // ストリームを停止
+        setMicPermission('granted')
       } catch (error) {
         console.error('Microphone access denied:', error)
         setMicPermission('denied')
