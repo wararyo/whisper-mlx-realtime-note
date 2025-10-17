@@ -1,9 +1,9 @@
-import { useEffect, useRef, useImperativeHandle, forwardRef, useMemo } from 'react'
+import { useEffect, useRef, useImperativeHandle, forwardRef } from 'react'
 import * as Y from 'yjs'
-import { yCollab } from 'y-codemirror.next'
+import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
 import { EditorView, lineNumbers, Decoration, WidgetType } from '@codemirror/view'
 import { EditorState, StateField, StateEffect } from '@codemirror/state'
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { defaultKeymap, indentWithTab } from '@codemirror/commands'
 import { syntaxHighlighting, HighlightStyle, indentUnit } from '@codemirror/language'
 import { tags } from '@lezer/highlight'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
@@ -295,8 +295,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
 
       // CodeMirror v6のエクステンションを設定
       const extensions = [
-        history(),
-        keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab, ...customKeymap]),
+        keymap.of([...defaultKeymap, ...yUndoManagerKeymap, indentWithTab, ...customKeymap]),
         indentUnit.of('    '), // インデントをスペース4つに設定
         EditorState.tabSize.of(4),
         lineNumbers(),
@@ -306,7 +305,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
           base: markdownLanguage, // GFMを使用
           completeHTMLTags: false,
         }),
-        yCollab(yText, provider.awareness),
+        yCollab(yText, null),
         statusChipExtension,
         EditorView.updateListener.of((update) => {
           if (update.docChanged && onChangeRef.current) {
