@@ -22,10 +22,10 @@ function App() {
     tabAudio: { enabled: false }
   })
   const [isAudioSettingsOpen, setIsAudioSettingsOpen] = useState<boolean>(false)
-  
+
   const editorRef = useRef<CodeMirrorEditorHandle>(null)
   const vadManagerRef = useRef<VADManagerHandle>(null)
-  
+
   // テキストエディタの末尾に表示される、現在の状態を表すチップは基本的にCodeMirrorEditorで管理している
   // VAD側では発話が完了してから初めてidentifierが発行されるが、チップは発話開始前から表示したいため、
   // VADのidentifierとChipのidentifierは別々に管理する必要がある
@@ -45,9 +45,9 @@ function App() {
       if (currentText && (!status.hasSaved || (now.getTime() - status.lastSavedAt.getTime() > AUTO_SAVE_INTERVAL))) {
         localStorage.setItem(STORAGE_KEY, currentText)
         return {
-          hasSaved: true, 
+          hasSaved: true,
           lastSavedAt: now,
-          lastSaveType: 'auto' 
+          lastSaveType: 'auto'
         }
       }
       return status
@@ -78,7 +78,7 @@ function App() {
         })
         chipsRelationRef.current.clear()
         break
-        
+
       case 'ready':
         // listeningチップを追加
         {
@@ -93,7 +93,7 @@ function App() {
           currentListeningChipRef.current = newIdentifier
         }
         break
-        
+
       case 'startListening':
         // listeningチップの状態を変更
         if (currentListeningChipRef.current !== null) {
@@ -112,7 +112,7 @@ function App() {
           currentListeningChipRef.current = newIdentifier
         }
         break
-        
+
       case 'misfire':
         // listeningチップの状態を変更
         if (currentListeningChipRef.current !== null) {
@@ -147,7 +147,7 @@ function App() {
           currentListeningChipRef.current = newIdentifier
         }, 500)
         break
-        
+
       case 'processed':
         // 対応する処理中チップを削除
         {
@@ -162,7 +162,7 @@ function App() {
         // テキストを追加
         appendToTranscript(event.transcript)
         break
-        
+
       case 'error':
         // エラーが発生したチップを更新
         {
@@ -195,7 +195,7 @@ function App() {
         setMicPermission('denied')
       }
     }
-    
+
     checkMicPermission()
   }, [])
 
@@ -228,10 +228,10 @@ function App() {
     if (!editorRef.current) throw new Error('Editor is not ready')
     const currentText = editorRef.current?.getText()
     localStorage.setItem(STORAGE_KEY, currentText)
-    setSaveStatus({ 
-      hasSaved: true, 
-      lastSavedAt: new Date(), 
-      lastSaveType: 'manual' 
+    setSaveStatus({
+      hasSaved: true,
+      lastSavedAt: new Date(),
+      lastSaveType: 'manual'
     })
   }
 
@@ -378,7 +378,7 @@ function App() {
           </div>
         )}
       </div>
-      
+
       <CodeMirrorEditor
         ref={editorRef}
         onSaveRequested={handleManualSave}

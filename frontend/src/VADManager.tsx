@@ -35,7 +35,7 @@ export interface AudioSourceSettings {
   tabAudio: { enabled: boolean }
 }
 
-export type VADEvent = 
+export type VADEvent =
   | { type: 'startInitializing' }
   | { type: 'ready' }
   | { type: 'frameProcessed'; probability: number }
@@ -87,22 +87,24 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
         console.error('Failed to restart VAD:', error)
       }
     }
-  }), [])
+  }), [micPermission])
 
   // マイクの音声ストリームを取得
   const getMicAudioStream = useCallback(async (): Promise<MediaStream> => {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: {
-      channelCount: 1,
-      echoCancellation: audioSettings.mic.echoCancellation,
-      noiseSuppression: audioSettings.mic.noiseSuppression,
-      autoGainControl: true
-    } })
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        echoCancellation: audioSettings.mic.echoCancellation,
+        noiseSuppression: audioSettings.mic.noiseSuppression,
+        autoGainControl: true
+      }
+    })
     return stream
   }, [audioSettings.mic])
 
   // タブの音声ストリームを取得
   const getTabAudioStream = useCallback(async (): Promise<MediaStream> => {
-    const stream = await navigator.mediaDevices.getDisplayMedia({ 
+    const stream = await navigator.mediaDevices.getDisplayMedia({
       audio: true,
       video: true // 一時的に必要
     })
@@ -136,7 +138,7 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
       combinedStreamRef.current = null
     }
   }, [])
-  
+
   // マイク音声ストリームの作成および更新
   useEffect(() => {
     let isMounted = true;

@@ -30,7 +30,7 @@ export class TranscribeProvider extends ObservableV2<{}> {
 
     // Y.Textの末尾にテキストを追加
     const textToInsert = text.trim() + '\n'
-    
+
     // トランザクションを使用して一度に追加
     this.doc.transact(() => {
       this.yText.insert(this.yText.length, textToInsert)

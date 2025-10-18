@@ -20,38 +20,38 @@ lock = threading.Lock()
 
 @app.route('/api/transcribe', methods=['POST'])
 def transcribe():
-   time_sta = time.perf_counter()
-   print('start transcribe ' + str(time_sta))
+    time_sta = time.perf_counter()
+    print('start transcribe ' + str(time_sta))
    
-   if 'file' not in request.files:
-       return jsonify({'error': 'No file provided'}), 400
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
        
-   file = request.files['file']
-   if file.filename == '':
-       return jsonify({'error': 'No file selected'}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
        
-   if not file.filename:
-       return jsonify({'error': 'Invalid filename'}), 400
+    if not file.filename:
+        return jsonify({'error': 'Invalid filename'}), 400
        
-   ext = file.filename.rsplit('.', 1)[1].lower()
-   if ext and ext in ALLOWED_EXTENSIONS:
-       filename = str(int(time.time())) + '.' + ext
-       saved_filename = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-       file.save(saved_filename)
+    ext = file.filename.rsplit('.', 1)[1].lower()
+    if ext and ext in ALLOWED_EXTENSIONS:
+        filename = str(int(time.time())) + '.' + ext
+        saved_filename = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(saved_filename)
        
-       with lock:
-           result = mlx_whisper.transcribe(saved_filename, path_or_hf_repo=WHISPER_MODEL_NAME, language='ja', fp16=True)
+        with lock:
+            result = mlx_whisper.transcribe(saved_filename, path_or_hf_repo=WHISPER_MODEL_NAME, language='ja', fp16=True)
 
-       # avg_logprobがNaNになることがあるため、avg_logprobは取り除く
-       if 'segments' in result:
-           for segment in result['segments']:
-               if isinstance(segment, dict) and 'avg_logprob' in segment:
-                  del segment['avg_logprob']
+        # avg_logprobがNaNになることがあるため、avg_logprobは取り除く
+        if 'segments' in result:
+            for segment in result['segments']:
+                if isinstance(segment, dict) and 'avg_logprob' in segment:
+                    del segment['avg_logprob']
        
-       # 結果をJSON形式で返す
-       return jsonify(result), 200
+        # 結果をJSON形式で返す
+        return jsonify(result), 200
 
-   return jsonify({'error': 'Invalid file format'}), 400
+    return jsonify({'error': 'Invalid file format'}), 400
 
 if __name__ == '__main__':
     app.run(host='localhost', port=9000, debug=True)

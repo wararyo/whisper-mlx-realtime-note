@@ -43,10 +43,10 @@ class StatusChipWidget extends WidgetType {
   }
 
   eq(other: StatusChipWidget) {
-    return this.chip.identifier === other.chip.identifier && 
-           this.chip.text === other.chip.text && 
-           this.chip.type === other.chip.type &&
-           this.chip.level === other.chip.level
+    return this.chip.identifier === other.chip.identifier &&
+      this.chip.text === other.chip.text &&
+      this.chip.type === other.chip.type &&
+      this.chip.level === other.chip.level
   }
 
   updateDOM(dom: HTMLElement): boolean {
@@ -82,8 +82,8 @@ const statusChipsField = StateField.define<StatusChip[]>({
       } else if (effect.is(removeStatusChipEffect)) {
         chips = chips.filter(chip => chip.identifier !== effect.value)
       } else if (effect.is(updateStatusChipEffect)) {
-        chips = chips.map(chip => 
-          chip.identifier === effect.value.id 
+        chips = chips.map(chip =>
+          chip.identifier === effect.value.id
             ? {
               ...chip,
               ...(effect.value.type ? { type: effect.value.type } : {}),
@@ -104,12 +104,12 @@ const statusChipExtension = [
   EditorView.decorations.from(statusChipsField, (chips: StatusChip[]) => {
     return (view: EditorView) => {
       const decorations: any[] = []
-      
+
       if (chips.length > 0) {
         const doc = view.state.doc
         const lastLine = doc.lines
         const lastLineEnd = doc.line(lastLine).to
-        
+
         chips.forEach((chip: StatusChip) => {
           const decoration = Decoration.widget({
             widget: new StatusChipWidget(chip),
@@ -119,7 +119,7 @@ const statusChipExtension = [
           decorations.push(decoration.range(lastLineEnd))
         })
       }
-      
+
       return Decoration.set(decorations)
     }
   })
@@ -162,9 +162,9 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
         if (providerRef.current && cmViewRef.current) {
           // スクロール位置をチェック
           const wasAtBottom = isScrolledToBottom()
-          
+
           providerRef.current.appendTranscription(text)
-          
+
           // 一番下にいた場合は自動スクロール
           if (wasAtBottom) {
             setTimeout(() => scrollToBottom(), 100)
@@ -228,11 +228,11 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
 
     const isScrolledToBottom = () => {
       if (!cmViewRef.current) return false
-      
+
       const view = cmViewRef.current
       const { scrollTop, scrollHeight, clientHeight } = view.scrollDOM
       const threshold = 50 // 50px以内なら「下にいる」と判定
-      
+
       return (scrollTop + clientHeight + threshold >= scrollHeight)
     }
 
@@ -241,19 +241,19 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
         console.log('Editor ref not available, skipping initialization')
         return
       }
-      
+
       // 既にエディタが作成されている場合は早期リターン
       if (cmViewRef.current || cmWrapperRef.current) {
         console.log('Editor already exists, skipping initialization')
         return
       }
-      
+
       // コンテナに既に子要素がある場合はクリア
       if (editorRef.current.children.length > 0) {
         console.log('Clearing existing content in editor container')
         editorRef.current.innerHTML = ''
       }
-      
+
       console.log('Initializing CodeMirror v6 editor')
 
       // Y.jsドキュメントとプロバイダーを初期化
@@ -340,13 +340,13 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorHandle, CodeMirrorEdi
         view.destroy()
         provider.destroy()
         ydoc.destroy()
-        
+
         // エディタの親要素が残っている場合はクリア
         if (editorRef.current) {
           console.log('Clearing editor container')
           editorRef.current.innerHTML = ''
         }
-        
+
         // refをクリア
         cmViewRef.current = null
         ydocRef.current = null
