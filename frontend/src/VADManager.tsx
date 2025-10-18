@@ -5,7 +5,7 @@
  * VADと言いながらSTTもここでしているため名前を変更したほうがいいかもしれない
 */
 
-import { useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
+import { useEffect, useRef, useCallback, useImperativeHandle } from 'react'
 
 const ONNX_WASM_PATH = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/"
 const ASSET_PATH = "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.28/dist/"
@@ -50,6 +50,7 @@ interface VADManagerProps {
   micPermission: string
   withTimestamp?: boolean
   onEvent: (event: VADEvent) => void
+  ref?: React.Ref<VADManagerHandle>
 }
 
 // VADManagerの参照型
@@ -57,12 +58,13 @@ export interface VADManagerHandle {
   restartVAD: () => void
 }
 
-export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
+export const VADManager = ({
   audioSettings,
   micPermission,
   withTimestamp,
-  onEvent
-}, ref) => {
+  onEvent,
+  ref
+}: VADManagerProps) => {
   const vadRef = useRef<any>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const micStreamRef = useRef<MediaStream | null>(null)
@@ -372,6 +374,6 @@ export const VADManager = forwardRef<VADManagerHandle, VADManagerProps>(({
   }, [micPermission, onEvent, withTimestamp])
 
   return null // このコンポーネントはUIを持たない
-})
+}
 
 VADManager.displayName = 'VADManager'
