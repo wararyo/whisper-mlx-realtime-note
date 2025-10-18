@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { CodeMirrorEditor, CodeMirrorEditorHandle } from './CodeMirrorEditor'
 import { VADManager, VADManagerHandle, AudioSourceSettings, VADEvent } from './VADManager'
 import './App.css'
@@ -38,7 +38,7 @@ function App() {
   const listeningChipTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   // 前回の保存からAUTO_SAVE_INTERVAL以上経過していたら自動保存を行う
-  const handleAutoSave = useCallback(() => {
+  const handleAutoSave = () => {
     const currentText = editorRef.current?.getText()
     const now = new Date()
     setSaveStatus(status => {
@@ -52,17 +52,17 @@ function App() {
       }
       return status
     })
-  }, [])
+  }
 
   // テキストを議事録に追加する
-  const appendToTranscript = useCallback((text: string) => {
+  const appendToTranscript = (text: string) => {
     if (editorRef.current) {
       editorRef.current.appendText(text)
 
       // 自動保存を試みる
       handleAutoSave()
     }
-  }, [handleAutoSave])
+  }
 
   // VADのイベントを処理する
   const handleVadEvent = useCallback((event: VADEvent) => {
@@ -180,7 +180,7 @@ function App() {
         }
         break
     }
-  }, [appendToTranscript])
+  }, [])
 
   // マイクロフォン権限の確認
   useEffect(() => {
@@ -291,12 +291,12 @@ function App() {
     }))
   }
 
-  const saveStatusText = useMemo(() => {
+  const saveStatusText = (() => {
     if (!saveStatus.hasSaved) return ''
     const timeStr = saveStatus.lastSavedAt.toLocaleTimeString()
     const typeStr = saveStatus.lastSaveType === 'auto' ? '自動保存' : '手動保存'
     return `${typeStr}: ${timeStr}`
-  }, [saveStatus])
+  })()
 
   return (
     <div className="container">

@@ -154,13 +154,7 @@ export const CodeMirrorEditor = ({
   const cmViewRef = useRef<EditorView | null>(null)
   const ydocRef = useRef<Y.Doc | null>(null)
   const providerRef = useRef<TranscribeProvider | null>(null)
-  const onChangeRef = useRef(onChange)
   const cmWrapperRef = useRef<HTMLElement | null>(null) // CodeMirrorのDOM要素を保存
-
-  // onChangeが変わった時にrefを更新
-  useEffect(() => {
-    onChangeRef.current = onChange
-  }, [onChange])
 
   useImperativeHandle(ref, () => ({
     appendText: (text: string) => {
@@ -313,8 +307,8 @@ export const CodeMirrorEditor = ({
       yCollab(yText, null),
       statusChipExtension,
       EditorView.updateListener.of((update) => {
-        if (update.docChanged && onChangeRef.current) {
-          onChangeRef.current(update.state.doc.toString())
+        if (update.docChanged && onChange) {
+          onChange(update.state.doc.toString())
         }
       })
     ]
